@@ -75,31 +75,6 @@ export default function CustomerInfoCard() {
           </div>
         </div>
 
-        {/* 代表・担当 */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2 group">
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <FiUser className="w-4 h-4 text-teal-600" />
-              代表
-            </label>
-            <div className="flex gap-2">
-              <Input className="flex-1 group-hover:border-teal-300 transition-colors" />
-              <Input className="w-20 group-hover:border-teal-300 transition-colors" />
-            </div>
-          </div>
-
-          <div className="space-y-2 group">
-            <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-              <FiUser className="w-4 h-4 text-cyan-600" />
-              担当
-            </label>
-            <div className="flex gap-2">
-              <Input className="flex-1 group-hover:border-cyan-300 transition-colors" />
-              <Input className="w-20 group-hover:border-cyan-300 transition-colors" />
-            </div>
-          </div>
-        </div>
-
         {/* メール・FAX */}
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2 group">

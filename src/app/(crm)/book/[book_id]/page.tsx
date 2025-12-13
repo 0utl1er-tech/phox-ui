@@ -7,7 +7,8 @@ import {
   FiPlus,
   FiUser,
   FiPhone,
-  FiMail
+  FiMail,
+  FiSettings
 } from "react-icons/fi";
 
 // ダミーデータ
@@ -84,7 +85,9 @@ const customers = [
   }
 ];
 
-export default function CustomerListPage() {
+export default function CustomerListPage({ params }: { params: { book_id: string } }) {
+  const bookId = params.book_id;
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-6">
       <div className="max-w-7xl mx-auto">
@@ -94,10 +97,18 @@ export default function CustomerListPage() {
             <div>
               <h1 className="text-3xl font-bold text-gray-900">顧客一覧</h1>
             </div>
-            <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
-              <FiPlus className="w-4 h-4 mr-2" />
-              CSVインポート
-            </Button>
+            <div className="flex gap-2">
+              <Link href={`/book/${bookId}/settings`}>
+                <Button variant="outline">
+                  <FiSettings className="w-4 h-4 mr-2" />
+                  ブック設定
+                </Button>
+              </Link>
+              <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+                <FiPlus className="w-4 h-4 mr-2" />
+                CSVインポート
+              </Button>
+            </div>
           </div>
         </div>
 

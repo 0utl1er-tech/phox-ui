@@ -1,13 +1,48 @@
-import Image from "next/image";
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { signOut } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+import { useAuthStore } from "@/store/authStore";
+import { Button } from "@/components/ui/button";
 
 export default function Navbar() {
+  const { isAuthenticated, user, isLoading } = useAuthStore();
+  const router = useRouter();
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      router.push("/login");
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
+
   return (
-    <div className="flex justify-between items-center p-4 bg-white shadow-md">
-      <div className="flex items-center">
-        <Image src="/logo.png" alt="logo" width={100} height={80} />
+    <header className="flex justify-between items-center p-4 bg-white shadow-md h-20">
+      <Link href="/" className="flex items-center">
+        <span className="text-2xl font-bold text-gray-800">Phox</span>
+      </Link>
+      <div className="flex items-center space-x-4">
+        {isLoading ? (
+          <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
+        ) : isAuthenticated ? (
+          <>
+            <span className="text-sm text-gray-600 hidden sm:inline">
+              {user?.displayName || user?.email}
+            </span>
+            <Button variant="outline" onClick={handleLogout}>
+              ログアウト
+            </Button>
+          </>
+        ) : (
+          <Button asChild>
+            <Link href="/login">ログイン</Link>
+          </Button>
+        )}
       </div>
-      <div className="flex items-center">
-      </div>
-    </div>
+    </header>
   );
 }
