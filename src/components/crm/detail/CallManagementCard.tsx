@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/store/authStore";
 import { FiPhone } from "react-icons/fi";
+import { PhoneInput, PhoneLink } from "@/components/ui/phone-input";
 
 interface Call {
   id: string;
@@ -36,9 +37,10 @@ interface CallManagementCardProps {
   customerId: string;
   bookId: string;
   customerPhone?: string;
+  onPhoneChange?: (phone: string) => void;
 }
 
-export default function CallManagementCard({ customerId, bookId, customerPhone }: CallManagementCardProps) {
+export default function CallManagementCard({ customerId, bookId, customerPhone, onPhoneChange }: CallManagementCardProps) {
   const [calls, setCalls] = useState<Call[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -205,10 +207,12 @@ export default function CallManagementCard({ customerId, bookId, customerPhone }
         <div className="flex gap-4 items-end p-4 bg-blue-50 rounded-lg">
           <div className="flex-1">
             <label className="text-sm font-medium text-gray-700 mb-1 block">電話番号</label>
-            <div className="flex items-center gap-2 p-2 bg-white rounded border">
-              <FiPhone className="w-4 h-4 text-gray-500" />
-              <span>{customerPhone || '-'}</span>
-            </div>
+            <PhoneInput
+              value={customerPhone || ''}
+              onChange={onPhoneChange}
+              readOnly={!onPhoneChange}
+              placeholder="電話番号"
+            />
           </div>
           <div className="flex-1">
             <label className="text-sm font-medium text-gray-700 mb-1 block">コール結果</label>
@@ -277,7 +281,9 @@ export default function CallManagementCard({ customerId, bookId, customerPhone }
                     >
                       <TableCell className="font-medium">{date}</TableCell>
                       <TableCell>{time}</TableCell>
-                      <TableCell>{call.phone || '-'}</TableCell>
+                      <TableCell>
+                        <PhoneLink phone={call.phone} />
+                      </TableCell>
                       <TableCell>{call.userName || '-'}</TableCell>
                       <TableCell>
                         <Badge 

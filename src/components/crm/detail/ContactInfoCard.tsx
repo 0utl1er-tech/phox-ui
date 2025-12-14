@@ -9,6 +9,7 @@ import { FaRegAddressBook } from "react-icons/fa";
 import { FiUpload, FiPlus } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import { ContactImportDialog } from "@/components/crm/contact-import-dialog";
+import { PhoneInput, PhoneLink } from "@/components/ui/phone-input";
 
 interface Contact {
   id: string;
@@ -23,9 +24,10 @@ interface Contact {
 interface ContactInfoCardProps {
   customerId: string;
   customerPhone?: string;
+  onPhoneChange?: (phone: string) => void;
 }
 
-export default function ContactInfoCard({ customerId, customerPhone }: ContactInfoCardProps) {
+export default function ContactInfoCard({ customerId, customerPhone, onPhoneChange }: ContactInfoCardProps) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,9 +98,12 @@ export default function ContactInfoCard({ customerId, customerPhone }: ContactIn
           {/* 代表番号 */}
           <div className="space-y-2">
             <label className="font-medium text-gray-700">代表番号</label>
-            <div className="flex gap-2">
-              <Input className="flex-1" value={customerPhone || ''} readOnly />
-            </div>
+            <PhoneInput
+              value={customerPhone || ''}
+              onChange={onPhoneChange}
+              readOnly={!onPhoneChange}
+              placeholder="電話番号を入力"
+            />
           </div>
 
           <div className="flex justify-between items-center pt-3">
@@ -157,7 +162,9 @@ export default function ContactInfoCard({ customerId, customerPhone }: ContactIn
                     <TableRow key={contact.id} className="hover:bg-gray-50">
                       <TableCell>{contact.name || '-'}</TableCell>
                       <TableCell>{contact.mail || '-'}</TableCell>
-                      <TableCell>{contact.phone || '-'}</TableCell>
+                      <TableCell>
+                        <PhoneLink phone={contact.phone} />
+                      </TableCell>
                       <TableCell>{contact.fax || '-'}</TableCell>
                     </TableRow>
                   ))

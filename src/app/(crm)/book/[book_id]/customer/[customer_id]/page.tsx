@@ -1,11 +1,12 @@
 "use client"
 
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import CustomerInfoCard from "@/components/crm/detail/CustomerInfoCard";
 import ContactInfoCard from "@/components/crm/detail/ContactInfoCard";
 import CallManagementCard from "@/components/crm/detail/CallManagementCard";
 import { useAuthStore } from "@/store/authStore";
+import { updateCustomer } from "./actions";
 
 interface Customer {
   id: string;
@@ -69,6 +70,30 @@ export default function CustomerDetailPage() {
     fetchCustomer();
   }, [user, customerId]);
 
+  // 電話番号変更ハンドラー
+  const handlePhoneChange = useCallback(async (phone: string) => {
+    if (!customer || !user) return;
+    
+    try {
+      const token = await user.getIdToken();
+      const result = await updateCustomer(
+        {
+          id: customer.id,
+          phone: phone,
+        },
+        token
+      );
+      
+      if (result.success && result.customer) {
+        setCustomer(result.customer);
+      } else {
+        console.error('Failed to update phone:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to update phone:', error);
+    }
+  }, [customer, user]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 ">
       <div className="m-5">
@@ -76,7 +101,10 @@ export default function CustomerDetailPage() {
           {/* 左側の3つのセクション */}
           <div className="space-y-6 lg:col-span-2">
             {/* 顧客情報セクション */}
-            <CustomerInfoCard />
+            <CustomerInfoCard 
+              customer={customer} 
+              onCustomerUpdate={setCustomer}
+            />
           </div>
 
           {/* 右側のセクション */}
@@ -85,6 +113,7 @@ export default function CustomerDetailPage() {
             <ContactInfoCard 
               customerId={customerId} 
               customerPhone={customer?.phone}
+              onPhoneChange={handlePhoneChange}
             />
             
             {/* コール履歴セクション */}
@@ -92,6 +121,7 @@ export default function CustomerDetailPage() {
               customerId={customerId}
               bookId={bookId}
               customerPhone={customer?.phone}
+              onPhoneChange={handlePhoneChange}
             />
           </div>
         </div>

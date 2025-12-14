@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CSVImportDialog } from "@/components/crm/csv-import-dialog";
 import Link from "next/link";
-import { FiPlus, FiBook, FiUpload } from "react-icons/fi";
+import { FiPlus, FiBook, FiUpload, FiSettings } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 
 // Define the type for a single book
@@ -121,7 +121,7 @@ export default function BookListPage() {
                   <TableHeader>
                     <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
                       <TableHead className="text-white font-medium">リスト名</TableHead>
-                      <TableHead className="text-white font-medium">アクション</TableHead>
+                      <TableHead className="text-white font-medium text-right">アクション</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -135,9 +135,16 @@ export default function BookListPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Link href={`/book/${book.id}`}>
-                              <Button variant="outline" size="sm">顧客を見る</Button>
-                            </Link>
+                            <div className="flex items-center justify-end gap-2">
+                              <Link href={`/book/${book.id}/settings`}>
+                                <Button variant="outline" size="sm" title="ステータス設定">
+                                  <FiSettings className="w-4 h-4" />
+                                </Button>
+                              </Link>
+                              <Link href={`/book/${book.id}`}>
+                                <Button variant="outline" size="sm">顧客を見る</Button>
+                              </Link>
+                            </div>
                           </TableCell>
                         </TableRow>
                       ))
