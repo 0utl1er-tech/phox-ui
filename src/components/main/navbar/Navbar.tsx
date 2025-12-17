@@ -6,6 +6,7 @@ import { signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
+import { FiSettings } from "react-icons/fi";
 
 export default function Navbar() {
   const { isAuthenticated, user, isLoading } = useAuthStore();
@@ -33,6 +34,11 @@ export default function Navbar() {
             <span className="text-sm text-gray-600 hidden sm:inline">
               {user?.displayName || user?.email}
             </span>
+            <Button variant="ghost" size="icon" asChild title="ユーザー設定">
+              <Link href="/settings">
+                <FiSettings className="w-5 h-5" />
+              </Link>
+            </Button>
             <Button variant="outline" onClick={handleLogout}>
               ログアウト
             </Button>
