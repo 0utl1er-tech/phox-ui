@@ -29,7 +29,8 @@ export default function UserSettingsPage() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
 
-  const [newUserId, setNewUserId] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
   const [newUserName, setNewUserName] = useState("");
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [addUserError, setAddUserError] = useState<string | null>(null);
@@ -163,7 +164,12 @@ export default function UserSettingsPage() {
   };
 
   const handleAddUser = async () => {
-    if (!authUser || !newUserId.trim() || !newUserName.trim()) {
+    if (!authUser || !newUserEmail.trim() || !newUserPassword || !newUserName.trim()) {
+      return;
+    }
+
+    if (newUserPassword.length < 6) {
+      setAddUserError("パスワードは6文字以上で入力してください");
       return;
     }
 
@@ -174,7 +180,7 @@ export default function UserSettingsPage() {
       const token = await authUser.getIdToken();
       
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
-      const url = `${apiUrl}/user.v1.UserService/AddCompanyUser`;
+      const url = `${apiUrl}/user.v1.UserService/CreateCompanyUser`;
       
       const response = await fetch(url, {
         method: 'POST',
@@ -183,25 +189,36 @@ export default function UserSettingsPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          userId: newUserId.trim(),
+          email: newUserEmail.trim(),
+          password: newUserPassword,
           name: newUserName.trim(),
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Failed to add user: ${response.statusText} - ${errorText}`);
+        if (errorText.includes("already exists") || errorText.includes("EMAIL_EXISTS")) {
+          throw new Error("このメールアドレスは既に使用されています");
+        }
+        if (errorText.includes("invalid email") || errorText.includes("INVALID_EMAIL")) {
+          throw new Error("メールアドレスの形式が正しくありません");
+        }
+        if (errorText.includes("weak password") || errorText.includes("WEAK_PASSWORD")) {
+          throw new Error("パスワードが弱すぎます。より強力なパスワードを設定してください");
+        }
+        throw new Error(`ユーザーの追加に失敗しました: ${response.statusText}`);
       }
 
       setAddUserSuccess("ユーザーを追加しました");
-      setNewUserId("");
+      setNewUserEmail("");
+      setNewUserPassword("");
       setNewUserName("");
       fetchCompanyUsers();
       
       setTimeout(() => setAddUserSuccess(null), 3000);
     } catch (e: unknown) {
       const errorMessage = e instanceof Error ? e.message : 'An error occurred';
-      setAddUserError(`エラーが発生しました: ${errorMessage}`);
+      setAddUserError(errorMessage);
     } finally {
       setIsAddingUser(false);
     }
@@ -334,34 +351,48 @@ export default function UserSettingsPage() {
                   )}
                   
                   <div className="space-y-2">
-                    <label htmlFor="newUserId" className="text-sm font-medium text-gray-700">
-                      Firebase UID
+                    <label htmlFor="newUserEmail" className="text-sm font-medium text-gray-700">
+                      メールアドレス
                     </label>
                     <Input
-                      id="newUserId"
-                      value={newUserId}
-                      onChange={(e) => setNewUserId(e.target.value)}
-                      placeholder="新しいユーザーのFirebase UIDを入力"
+                      id="newUserEmail"
+                      type="email"
+                      value={newUserEmail}
+                      onChange={(e) => setNewUserEmail(e.target.value)}
+                      placeholder="example@company.com"
                     />
-                    <p className="text-xs text-gray-500">追加するユーザーのFirebase認証UIDを入力してください</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="newUserPassword" className="text-sm font-medium text-gray-700">
+                      パスワード
+                    </label>
+                    <Input
+                      id="newUserPassword"
+                      type="password"
+                      value={newUserPassword}
+                      onChange={(e) => setNewUserPassword(e.target.value)}
+                      placeholder="6文字以上のパスワード"
+                    />
+                    <p className="text-xs text-gray-500">6文字以上で設定してください</p>
                   </div>
 
                   <div className="space-y-2">
                     <label htmlFor="newUserName" className="text-sm font-medium text-gray-700">
-                      ユーザー名
+                      氏名
                     </label>
                     <Input
                       id="newUserName"
                       value={newUserName}
                       onChange={(e) => setNewUserName(e.target.value)}
-                      placeholder="新しいユーザーの名前を入力"
+                      placeholder="山田 太郎"
                     />
                   </div>
 
                   <div className="pt-2">
                     <Button
                       onClick={handleAddUser}
-                      disabled={isAddingUser || !newUserId.trim() || !newUserName.trim()}
+                      disabled={isAddingUser || !newUserEmail.trim() || !newUserPassword || !newUserName.trim()}
                       className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white"
                     >
                       {isAddingUser ? (
