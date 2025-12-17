@@ -2,7 +2,7 @@
 
 import { use } from "react";
 import StatusManagement from "@/components/crm/status-management";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import UserAccessManagement from "@/components/crm/user-access-management";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { FiArrowLeft, FiSettings } from "react-icons/fi";
@@ -31,8 +31,13 @@ export default function BookSettingsPage({ params }: BookSettingsPageProps) {
           </div>
         </div>
 
+        {/* アクセス権限管理 */}
+        <UserAccessManagement bookId={book_id} />
+
         {/* ステータス管理 */}
-        <StatusManagement bookId={book_id} />
+        <div className="mt-6">
+          <StatusManagement bookId={book_id} />
+        </div>
       </div>
     </div>
   );
