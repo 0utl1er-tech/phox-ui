@@ -1,10 +1,10 @@
 "use client"
 
 import { useParams } from "next/navigation";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import CustomerInfoCard from "@/components/crm/detail/CustomerInfoCard";
 import ContactInfoCard from "@/components/crm/detail/ContactInfoCard";
-import CallManagementCard from "@/components/crm/detail/CallManagementCard";
+import CallManagementCard, { CallManagementCardRef } from "@/components/crm/detail/CallManagementCard";
 import { useAuthStore } from "@/store/authStore";
 import { updateCustomer } from "./actions";
 
@@ -26,6 +26,12 @@ export default function CustomerDetailPage() {
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const user = useAuthStore((state) => state.user);
+  const callManagementRef = useRef<CallManagementCardRef>(null);
+
+  const handleCallCreated = useCallback(() => {
+    // 架電履歴が作成された際にrefを通じてリフレッシュ
+    callManagementRef.current?.refreshCalls();
+  }, []);
 
   useEffect(() => {
     const fetchCustomer = async () => {
@@ -112,16 +118,18 @@ export default function CustomerDetailPage() {
             {/* 連絡先情報セクション */}
             <ContactInfoCard 
               customerId={customerId} 
+              bookId={bookId}
               customerPhone={customer?.phone}
               onPhoneChange={handlePhoneChange}
+              onCallCreated={handleCallCreated}
             />
             
             {/* コール履歴セクション */}
             <CallManagementCard 
+              ref={callManagementRef}
               customerId={customerId}
               bookId={bookId}
-              customerPhone={customer?.phone}
-              onPhoneChange={handlePhoneChange}
+              onCallCreated={handleCallCreated}
             />
           </div>
         </div>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useImperativeHandle, forwardRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useAuthStore } from "@/store/authStore";
 import { FiPhone } from "react-icons/fi";
-import { PhoneInput, PhoneLink } from "@/components/ui/phone-input";
+import { PhoneLink } from "@/components/ui/phone-input";
 
 interface Call {
   id: string;
@@ -36,17 +36,19 @@ interface Status {
 interface CallManagementCardProps {
   customerId: string;
   bookId: string;
-  customerPhone?: string;
-  onPhoneChange?: (phone: string) => void;
+  onCallCreated?: () => void;
 }
 
-export default function CallManagementCard({ customerId, bookId, customerPhone, onPhoneChange }: CallManagementCardProps) {
+export interface CallManagementCardRef {
+  refreshCalls: () => void;
+}
+
+const CallManagementCard = forwardRef<CallManagementCardRef, CallManagementCardProps>(({ customerId, bookId, onCallCreated }, ref) => {
   const [calls, setCalls] = useState<Call[]>([]);
   const [statuses, setStatuses] = useState<Status[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedStatusId, setSelectedStatusId] = useState<string>("");
-  const [isCreating, setIsCreating] = useState(false);
+  const [updatingCallId, setUpdatingCallId] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
 
   const fetchCalls = useCallback(async () => {
@@ -97,6 +99,11 @@ export default function CallManagementCard({ customerId, bookId, customerPhone, 
     }
   }, [user, customerId]);
 
+  // refで外部からfetchCallsを呼べるようにする
+  useImperativeHandle(ref, () => ({
+    refreshCalls: fetchCalls,
+  }), [fetchCalls]);
+
   const fetchStatuses = useCallback(async () => {
     if (!user || !bookId) return;
 
@@ -128,51 +135,65 @@ export default function CallManagementCard({ customerId, bookId, customerPhone, 
         ng: s.ng,
       }));
       setStatuses(statusList);
-      if (statusList.length > 0 && !selectedStatusId) {
-        setSelectedStatusId(statusList[0].id);
-      }
     } catch (e: any) {
       console.error('Fetch statuses error:', e);
     }
-  }, [user, bookId, selectedStatusId]);
+  }, [user, bookId]);
 
   useEffect(() => {
     fetchCalls();
     fetchStatuses();
   }, [fetchCalls, fetchStatuses]);
 
-  const handleCreateCall = async () => {
-    if (!user || !selectedStatusId || !customerPhone) return;
+  // コール結果のステータスを更新
+  const handleUpdateCallStatus = async (callId: string, newStatusId: string) => {
+    if (!user) return;
 
     try {
-      setIsCreating(true);
+      setUpdatingCallId(callId);
       const token = await user.getIdToken();
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
-      const response = await fetch(`${apiUrl}/call.v1.CallService/CreateCall`, {
+      const response = await fetch(`${apiUrl}/call.v1.CallService/UpdateCall`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          customer_id: customerId,
-          phone: customerPhone,
-          status_id: selectedStatusId,
+          id: callId,
+          status_id: newStatusId,
         }),
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`コールの記録に失敗しました: ${errorText}`);
+        throw new Error(`コール結果の更新に失敗しました: ${errorText}`);
       }
 
-      fetchCalls();
+      // ローカルの状態を更新
+      const updatedStatus = statuses.find(s => s.id === newStatusId);
+      if (updatedStatus) {
+        setCalls(prevCalls => 
+          prevCalls.map(call => 
+            call.id === callId 
+              ? {
+                  ...call,
+                  statusId: newStatusId,
+                  statusName: updatedStatus.name,
+                  statusPriority: updatedStatus.priority,
+                  statusEffective: updatedStatus.effective,
+                  statusNg: updatedStatus.ng,
+                }
+              : call
+          )
+        );
+      }
     } catch (e: any) {
-      console.error('Create call error:', e);
+      console.error('Update call status error:', e);
       setError(e.message);
     } finally {
-      setIsCreating(false);
+      setUpdatingCallId(null);
     }
   };
 
@@ -203,42 +224,6 @@ export default function CallManagementCard({ customerId, bookId, customerPhone, 
         </div>
       </CardHeader>
       <CardContent className="p-6 space-y-6">
-        {/* コール記録フォーム */}
-        <div className="flex gap-4 items-end p-4 bg-blue-50 rounded-lg">
-          <div className="flex-1">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">電話番号</label>
-            <PhoneInput
-              value={customerPhone || ''}
-              onChange={onPhoneChange}
-              readOnly={!onPhoneChange}
-              placeholder="電話番号"
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-sm font-medium text-gray-700 mb-1 block">コール結果</label>
-            <Select value={selectedStatusId} onValueChange={setSelectedStatusId}>
-              <SelectTrigger>
-                <SelectValue placeholder="ステータスを選択" />
-              </SelectTrigger>
-              <SelectContent>
-                {statuses.map((status) => (
-                  <SelectItem key={status.id} value={status.id}>
-                    {status.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <Button 
-            onClick={handleCreateCall}
-            disabled={isCreating || !selectedStatusId || !customerPhone}
-            className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
-          >
-            <FiPhone className="w-4 h-4 mr-2" />
-            コール記録
-          </Button>
-        </div>
-
         {/* エラー表示 */}
         {error && (
           <div className="p-4 bg-red-50 text-red-600 rounded-lg">
@@ -282,19 +267,36 @@ export default function CallManagementCard({ customerId, bookId, customerPhone, 
                       <TableCell className="font-medium">{date}</TableCell>
                       <TableCell>{time}</TableCell>
                       <TableCell>
-                        <PhoneLink phone={call.phone} />
+                        <PhoneLink 
+                          phone={call.phone}
+                          customerId={customerId}
+                          bookId={bookId}
+                          onCallCreated={() => {
+                            fetchCalls();
+                            onCallCreated?.();
+                          }}
+                        />
                       </TableCell>
                       <TableCell>{call.userName || '-'}</TableCell>
                       <TableCell>
-                        <Badge 
-                          variant="secondary" 
-                          className={getStatusBadgeStyle({ 
-                            effective: call.statusEffective, 
-                            ng: call.statusNg 
-                          })}
+                        <Select 
+                          value={call.statusId} 
+                          onValueChange={(newStatusId) => handleUpdateCallStatus(call.id, newStatusId)}
+                          disabled={updatingCallId === call.id}
                         >
-                          {call.statusName}
-                        </Badge>
+                          <SelectTrigger className={`w-32 h-8 ${getStatusBadgeStyle({ effective: call.statusEffective, ng: call.statusNg })}`}>
+                            <SelectValue>{call.statusName}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statuses.map((status) => (
+                              <SelectItem key={status.id} value={status.id}>
+                                <span className={getStatusBadgeStyle({ effective: status.effective, ng: status.ng })}>
+                                  {status.name}
+                                </span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </TableCell>
                     </TableRow>
                   );
@@ -316,4 +318,8 @@ export default function CallManagementCard({ customerId, bookId, customerPhone, 
       </CardContent>
     </Card>
   );
-} 
+});
+
+CallManagementCard.displayName = "CallManagementCard";
+
+export default CallManagementCard;

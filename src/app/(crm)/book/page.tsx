@@ -30,7 +30,7 @@ export default function BookListPage() {
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(true); // Force refresh to get a fresh token
       
       console.log('Fetching books with token:', token ? 'Token present' : 'No token');
       

@@ -23,11 +23,13 @@ interface Contact {
 
 interface ContactInfoCardProps {
   customerId: string;
+  bookId: string;
   customerPhone?: string;
   onPhoneChange?: (phone: string) => void;
+  onCallCreated?: () => void;
 }
 
-export default function ContactInfoCard({ customerId, customerPhone, onPhoneChange }: ContactInfoCardProps) {
+export default function ContactInfoCard({ customerId, bookId, customerPhone, onPhoneChange, onCallCreated }: ContactInfoCardProps) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +105,9 @@ export default function ContactInfoCard({ customerId, customerPhone, onPhoneChan
               onChange={onPhoneChange}
               readOnly={!onPhoneChange}
               placeholder="電話番号を入力"
+              customerId={customerId}
+              bookId={bookId}
+              onCallCreated={onCallCreated}
             />
           </div>
 
@@ -163,7 +168,12 @@ export default function ContactInfoCard({ customerId, customerPhone, onPhoneChan
                       <TableCell>{contact.name || '-'}</TableCell>
                       <TableCell>{contact.mail || '-'}</TableCell>
                       <TableCell>
-                        <PhoneLink phone={contact.phone} />
+                        <PhoneLink 
+                          phone={contact.phone}
+                          customerId={customerId}
+                          bookId={bookId}
+                          onCallCreated={onCallCreated}
+                        />
                       </TableCell>
                       <TableCell>{contact.fax || '-'}</TableCell>
                     </TableRow>

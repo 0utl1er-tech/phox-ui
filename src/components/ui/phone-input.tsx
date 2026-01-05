@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { FiPhone, FiEdit2, FiCheck, FiX } from "react-icons/fi";
 import { cn } from "@/lib/utils";
+import { useAuthStore } from "@/store/authStore";
 
 interface PhoneInputProps {
   value: string;
@@ -13,6 +14,9 @@ interface PhoneInputProps {
   className?: string;
   showIcon?: boolean;
   placeholder?: string;
+  customerId?: string;
+  bookId?: string;
+  onCallCreated?: () => void;
 }
 
 export function PhoneInput({
@@ -23,6 +27,9 @@ export function PhoneInput({
   className,
   showIcon = true,
   placeholder = "電話番号",
+  customerId,
+  bookId,
+  onCallCreated,
 }: PhoneInputProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(value);
@@ -67,9 +74,91 @@ export function PhoneInput({
     }
   };
 
-  // 電話番号をtel:リンク用にフォーマット（ハイフンや空白を除去）
+  // 電話番号をZoom Phone発信用にフォーマット（ハイフンや空白を除去）
   const formatPhoneForTel = (phone: string) => {
     return phone.replace(/[-\s]/g, "");
+  };
+
+  const user = useAuthStore((state) => state.user);
+
+  // 架電履歴を自動保存
+  const saveCallHistory = async (phone: string) => {
+    console.log('saveCallHistory called:', { user: !!user, customerId, bookId, phone });
+    if (!user || !customerId || !bookId) {
+      console.log('saveCallHistory: 必要な情報が不足しています', { user: !!user, customerId, bookId });
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
+
+      // デフォルトステータス（priorityが最小のもの）を取得
+      const statusResponse = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ book_id: bookId }),
+      });
+
+      if (!statusResponse.ok) {
+        console.error('デフォルトステータスの取得に失敗しました');
+        return;
+      }
+
+      const statusData = await statusResponse.json();
+      const defaultStatusId = statusData.status?.id;
+
+      if (!defaultStatusId) {
+        console.error('デフォルトステータスが見つかりません');
+        return;
+      }
+
+      // 架電履歴を保存
+      const callResponse = await fetch(`${apiUrl}/call.v1.CallService/CreateCall`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          phone: phone,
+          status_id: defaultStatusId,
+        }),
+      });
+
+      if (!callResponse.ok) {
+        console.error('架電履歴の保存に失敗しました');
+        return;
+      }
+
+      // 架電履歴の保存成功時にコールバックを呼び出し
+      onCallCreated?.();
+    } catch (error) {
+      console.error('架電履歴の保存中にエラーが発生しました:', error);
+    }
+  };
+
+  // Zoom Phoneで直接発信
+  const handlePhoneClick = async (e: React.MouseEvent, phone: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 架電履歴を先に保存
+    await saveCallHistory(phone);
+    
+    const formattedPhone = formatPhoneForTel(phone);
+    
+    // Zoom Phoneを起動（aタグを動的に作成してページ遷移を防ぐ）
+    const link = document.createElement('a');
+    link.href = `zoomphonecall:${formattedPhone}`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   if (isEditing) {
@@ -113,13 +202,13 @@ export function PhoneInput({
     >
       {showIcon && <FiPhone className="w-4 h-4 text-gray-500 flex-shrink-0" />}
       {value ? (
-        <a
-          href={`tel:${formatPhoneForTel(value)}`}
-          className="flex-1 text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors"
-          onClick={(e) => e.stopPropagation()}
+        <button
+          type="button"
+          onClick={(e) => handlePhoneClick(e, value)}
+          className="flex-1 text-left text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors cursor-pointer"
         >
           {value}
-        </a>
+        </button>
       ) : (
         <span className="flex-1 text-gray-400">{placeholder || "-"}</span>
       )}
@@ -141,9 +230,14 @@ export function PhoneInput({
 interface PhoneLinkProps {
   phone: string;
   className?: string;
+  customerId?: string;
+  bookId?: string;
+  onCallCreated?: () => void;
 }
 
-export function PhoneLink({ phone, className }: PhoneLinkProps) {
+export function PhoneLink({ phone, className, customerId, bookId, onCallCreated }: PhoneLinkProps) {
+  const user = useAuthStore((state) => state.user);
+
   if (!phone) {
     return <span className="text-gray-400">-</span>;
   }
@@ -152,17 +246,97 @@ export function PhoneLink({ phone, className }: PhoneLinkProps) {
     return phone.replace(/[-\s]/g, "");
   };
 
+  // 架電履歴を自動保存
+  const saveCallHistory = async (phone: string) => {
+    console.log('PhoneLink saveCallHistory called:', { user: !!user, customerId, bookId, phone });
+    if (!user || !customerId || !bookId) {
+      console.log('PhoneLink saveCallHistory: 必要な情報が不足しています', { user: !!user, customerId, bookId });
+      return;
+    }
+
+    try {
+      const token = await user.getIdToken();
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
+
+      // デフォルトステータス（priorityが最小のもの）を取得
+      const statusResponse = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ book_id: bookId }),
+      });
+
+      if (!statusResponse.ok) {
+        console.error('デフォルトステータスの取得に失敗しました');
+        return;
+      }
+
+      const statusData = await statusResponse.json();
+      const defaultStatusId = statusData.status?.id;
+
+      if (!defaultStatusId) {
+        console.error('デフォルトステータスが見つかりません');
+        return;
+      }
+
+      // 架電履歴を保存
+      const callResponse = await fetch(`${apiUrl}/call.v1.CallService/CreateCall`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          customer_id: customerId,
+          phone: phone,
+          status_id: defaultStatusId,
+        }),
+      });
+
+      if (!callResponse.ok) {
+        console.error('架電履歴の保存に失敗しました');
+        return;
+      }
+
+      // 架電履歴の保存成功時にコールバックを呼び出し
+      onCallCreated?.();
+    } catch (error) {
+      console.error('架電履歴の保存中にエラーが発生しました:', error);
+    }
+  };
+
+  // Zoom Phoneで直接発信
+  const handlePhoneClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // 架電履歴を先に保存
+    await saveCallHistory(phone);
+    
+    const formattedPhone = formatPhoneForTel(phone);
+    
+    // Zoom Phoneを起動（aタグを動的に作成してページ遷移を防ぐ）
+    const link = document.createElement('a');
+    link.href = `zoomphonecall:${formattedPhone}`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <a
-      href={`tel:${formatPhoneForTel(phone)}`}
+    <button
+      type="button"
+      onClick={handlePhoneClick}
       className={cn(
-        "text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors inline-flex items-center gap-1",
+        "text-blue-600 hover:text-blue-800 hover:underline font-medium transition-colors inline-flex items-center gap-1 cursor-pointer",
         className
       )}
-      onClick={(e) => e.stopPropagation()}
     >
       <FiPhone className="w-3 h-3" />
       {phone}
-    </a>
+    </button>
   );
 }

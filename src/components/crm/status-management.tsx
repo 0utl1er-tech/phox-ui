@@ -8,7 +8,24 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useAuthStore } from "@/store/authStore";
-import { FiPlus, FiTrash2, FiEdit2, FiCheck, FiX } from "react-icons/fi";
+import { FiPlus, FiTrash2, FiEdit2, FiCheck, FiX, FiMove } from "react-icons/fi";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface Status {
   id: string;
@@ -21,6 +38,143 @@ interface Status {
 
 interface StatusManagementProps {
   bookId: string;
+}
+
+// ドラッグ可能なテーブル行コンポーネント
+interface SortableRowProps {
+  status: Status;
+  editingId: string | null;
+  editName: string;
+  setEditName: (name: string) => void;
+  setEditingId: (id: string | null) => void;
+  handleUpdateStatus: (status: Status) => void;
+  handleToggleEffective: (status: Status) => void;
+  handleToggleNg: (status: Status) => void;
+  handleDeleteStatus: (statusId: string) => void;
+}
+
+function SortableRow({
+  status,
+  editingId,
+  editName,
+  setEditName,
+  setEditingId,
+  handleUpdateStatus,
+  handleToggleEffective,
+  handleToggleNg,
+  handleDeleteStatus,
+}: SortableRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: status.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      className={`hover:bg-gray-50 ${isDragging ? "bg-blue-50" : ""}`}
+    >
+      <TableCell className="text-center">
+        <div className="flex items-center justify-center gap-2">
+          <button
+            {...attributes}
+            {...listeners}
+            className="cursor-grab hover:bg-gray-200 p-1 rounded"
+            title="ドラッグして順番を変更"
+          >
+            <FiMove className="w-4 h-4 text-gray-400" />
+          </button>
+          <span>{status.priority}</span>
+        </div>
+      </TableCell>
+      <TableCell>
+        {editingId === status.id ? (
+          <div className="flex gap-2">
+            <Input
+              value={editName}
+              onChange={(e) => setEditName(e.target.value)}
+              className="h-8"
+            />
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => handleUpdateStatus(status)}
+            >
+              <FiCheck className="w-4 h-4 text-green-600" />
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setEditingId(null);
+                setEditName("");
+              }}
+            >
+              <FiX className="w-4 h-4 text-red-600" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            {status.name}
+            {status.effective && (
+              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                有効
+              </Badge>
+            )}
+            {status.ng && (
+              <Badge variant="secondary" className="bg-red-100 text-red-800">
+                NG
+              </Badge>
+            )}
+          </div>
+        )}
+      </TableCell>
+      <TableCell className="text-center">
+        <Switch
+          checked={status.effective}
+          onCheckedChange={() => handleToggleEffective(status)}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <Switch
+          checked={status.ng}
+          onCheckedChange={() => handleToggleNg(status)}
+        />
+      </TableCell>
+      <TableCell className="text-center">
+        <div className="flex justify-center gap-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setEditingId(status.id);
+              setEditName(status.name);
+            }}
+          >
+            <FiEdit2 className="w-4 h-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => handleDeleteStatus(status.id)}
+          >
+            <FiTrash2 className="w-4 h-4 text-red-600" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  );
 }
 
 export default function StatusManagement({ bookId }: StatusManagementProps) {
@@ -245,6 +399,75 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     }
   };
 
+  const handleUpdatePriority = async (statusId: string, newPriority: number) => {
+    if (!user) return;
+
+    try {
+      const token = await user.getIdToken();
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
+      
+      const response = await fetch(`${apiUrl}/status.v1.StatusService/UpdateStatus`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id: statusId,
+          priority: newPriority,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`優先度の更新に失敗しました: ${errorText}`);
+      }
+    } catch (e: any) {
+      console.error('Update priority error:', e);
+      setError(e.message);
+    }
+  };
+
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (over && active.id !== over.id) {
+      const oldIndex = statuses.findIndex((s) => s.id === active.id);
+      const newIndex = statuses.findIndex((s) => s.id === over.id);
+
+      // ローカルで順番を変更して表示を即時更新
+      const newStatuses = arrayMove(statuses, oldIndex, newIndex);
+      
+      // priorityを再計算（1から順番に割り当て）
+      const updatedStatuses = newStatuses.map((status, index) => ({
+        ...status,
+        priority: index + 1,
+      }));
+      
+      setStatuses(updatedStatuses);
+
+      // 移動した2つのステータスのpriorityを交換
+      const movedStatus = statuses[oldIndex];
+      const targetStatus = statuses[newIndex];
+      
+      // 両方のステータスのpriorityをAPIで更新
+      await Promise.all([
+        handleUpdatePriority(movedStatus.id, targetStatus.priority),
+        handleUpdatePriority(targetStatus.id, movedStatus.priority),
+      ]);
+
+      // 最新のデータを取得
+      fetchStatuses();
+    }
+  };
+
   return (
     <Card className="shadow-soft border-0 bg-white/80 backdrop-blur-sm">
       <CardHeader>
@@ -294,113 +517,61 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
 
         {/* ステータス一覧 */}
         <div className="border rounded-lg overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
-                <TableHead className="text-white font-medium w-16">優先度</TableHead>
-                <TableHead className="text-white font-medium">ステータス名</TableHead>
-                <TableHead className="text-white font-medium w-24 text-center">有効</TableHead>
-                <TableHead className="text-white font-medium w-24 text-center">NG</TableHead>
-                <TableHead className="text-white font-medium w-24 text-center">操作</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isLoading ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                    読み込み中...
-                  </TableCell>
+          <p className="text-sm text-gray-500 px-4 py-2 bg-gray-50 border-b">
+            💡 優先度列のアイコンをドラッグして順番を変更できます
+          </p>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
+                  <TableHead className="text-white font-medium w-20">優先度</TableHead>
+                  <TableHead className="text-white font-medium">ステータス名</TableHead>
+                  <TableHead className="text-white font-medium w-24 text-center">有効</TableHead>
+                  <TableHead className="text-white font-medium w-24 text-center">NG</TableHead>
+                  <TableHead className="text-white font-medium w-24 text-center">操作</TableHead>
                 </TableRow>
-              ) : statuses.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-8 text-gray-500">
-                    ステータスがありません
-                  </TableCell>
-                </TableRow>
-              ) : (
-                statuses.map((status) => (
-                  <TableRow key={status.id} className="hover:bg-gray-50">
-                    <TableCell className="text-center">{status.priority}</TableCell>
-                    <TableCell>
-                      {editingId === status.id ? (
-                        <div className="flex gap-2">
-                          <Input
-                            value={editName}
-                            onChange={(e) => setEditName(e.target.value)}
-                            className="h-8"
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => handleUpdateStatus(status)}
-                          >
-                            <FiCheck className="w-4 h-4 text-green-600" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => {
-                              setEditingId(null);
-                              setEditName("");
-                            }}
-                          >
-                            <FiX className="w-4 h-4 text-red-600" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          {status.name}
-                          {status.effective && (
-                            <Badge variant="secondary" className="bg-green-100 text-green-800">
-                              有効
-                            </Badge>
-                          )}
-                          {status.ng && (
-                            <Badge variant="secondary" className="bg-red-100 text-red-800">
-                              NG
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Switch
-                        checked={status.effective}
-                        onCheckedChange={() => handleToggleEffective(status)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <Switch
-                        checked={status.ng}
-                        onCheckedChange={() => handleToggleNg(status)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <div className="flex justify-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => {
-                            setEditingId(status.id);
-                            setEditName(status.name);
-                          }}
-                        >
-                          <FiEdit2 className="w-4 h-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleDeleteStatus(status.id)}
-                        >
-                          <FiTrash2 className="w-4 h-4 text-red-600" />
-                        </Button>
-                      </div>
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                      読み込み中...
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
+                ) : statuses.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                      ステータスがありません
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  <SortableContext
+                    items={statuses.map((s) => s.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {statuses.map((status) => (
+                      <SortableRow
+                        key={status.id}
+                        status={status}
+                        editingId={editingId}
+                        editName={editName}
+                        setEditName={setEditName}
+                        setEditingId={setEditingId}
+                        handleUpdateStatus={handleUpdateStatus}
+                        handleToggleEffective={handleToggleEffective}
+                        handleToggleNg={handleToggleNg}
+                        handleDeleteStatus={handleDeleteStatus}
+                      />
+                    ))}
+                  </SortableContext>
+                )}
+              </TableBody>
+            </Table>
+          </DndContext>
         </div>
       </CardContent>
     </Card>
