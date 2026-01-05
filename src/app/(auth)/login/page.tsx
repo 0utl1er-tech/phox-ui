@@ -26,7 +26,8 @@ export default function LoginPage() {
     e.preventDefault();
     setError(null);
     try {
-      await signInWithEmailAndPassword(auth, email, password);
+      const firebaseAuth = auth();
+      await signInWithEmailAndPassword(firebaseAuth, email, password);
       router.push("/");
     } catch (error: any) {
       console.error("Login failed:", error);

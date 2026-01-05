@@ -14,7 +14,8 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      const firebaseAuth = auth();
+      await signOut(firebaseAuth);
       router.push("/login");
     } catch (error) {
       console.error("Logout failed", error);
