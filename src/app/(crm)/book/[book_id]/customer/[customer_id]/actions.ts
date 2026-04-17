@@ -8,6 +8,7 @@ export interface UpdateCustomerData {
   corporation?: string;
   address?: string;
   memo?: string;
+  mail?: string;
 }
 
 export interface UpdateCustomerResult {
@@ -22,6 +23,7 @@ export interface UpdateCustomerResult {
     corporation: string;
     address: string;
     memo: string;
+    mail: string;
   };
 }
 
@@ -67,6 +69,7 @@ export async function updateCustomer(
         corporation: updatedCustomer?.corporation || "",
         address: updatedCustomer?.address || "",
         memo: updatedCustomer?.memo || "",
+        mail: updatedCustomer?.mail || "",
       },
     };
   } catch (error) {

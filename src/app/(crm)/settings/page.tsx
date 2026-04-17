@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Input } from "@/components/ui/input";
 import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
+import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-connection-card";
+import ICalFeedCard from "@/components/crm/ical-feed-card";
 
 interface User {
   id: string;
@@ -45,7 +47,7 @@ export default function UserSettingsPage() {
     try {
       setIsLoading(true);
       setError(null);
-      const token = await authUser.getIdToken();
+      const token = authUser.accessToken;
       
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       const url = `${apiUrl}/user.v1.UserService/GetMe`;
@@ -83,7 +85,7 @@ export default function UserSettingsPage() {
     try {
       setIsLoadingUsers(true);
       setUsersError(null);
-      const token = await authUser.getIdToken();
+      const token = authUser.accessToken;
       
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       const url = `${apiUrl}/user.v1.UserService/ListCompanyUsers`;
@@ -131,7 +133,7 @@ export default function UserSettingsPage() {
       setIsSaving(true);
       setError(null);
       setSuccessMessage(null);
-      const token = await authUser.getIdToken();
+      const token = authUser.accessToken;
       
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       const url = `${apiUrl}/user.v1.UserService/UpdateUser`;
@@ -177,7 +179,7 @@ export default function UserSettingsPage() {
       setIsAddingUser(true);
       setAddUserError(null);
       setAddUserSuccess(null);
-      const token = await authUser.getIdToken();
+      const token = authUser.accessToken;
       
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       const url = `${apiUrl}/user.v1.UserService/CreateCompanyUser`;
@@ -324,6 +326,12 @@ export default function UserSettingsPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Phase 20e: iCalendar 購読 URL (メイン導線 — universal) */}
+        {authUser && <ICalFeedCard />}
+
+        {/* Phase 20: Google Calendar OAuth 連携 (Workspace 契約 or OAuth 審査通過時のみ) */}
+        {authUser && <GoogleCalendarConnectionCard />}
 
         {user?.company && (
           <>

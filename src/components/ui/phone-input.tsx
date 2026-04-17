@@ -81,19 +81,63 @@ export function PhoneInput({
 
   const user = useAuthStore((state) => state.user);
 
-  // 架電履歴を自動保存
-  const saveCallHistory = async (phone: string) => {
-    console.log('saveCallHistory called:', { user: !!user, customerId, bookId, phone });
-    if (!user || !customerId || !bookId) {
-      console.log('saveCallHistory: 必要な情報が不足しています', { user: !!user, customerId, bookId });
-      return;
+  // Phase 21: Zoom Phone API 経由で発信 + Activity 記録。
+  // Zoom API が未設定 (dev/MailHog 環境) なら従来の zoomphonecall: URL scheme にフォールバック。
+  const handlePhoneClick = async (e: React.MouseEvent, phone: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (!user || !phone) return;
+
+    const token = user.accessToken;
+    const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
+
+    // 1. まず Zoom Phone API 発信を試行
+    try {
+      const resp = await fetch(`${apiUrl}/zoomphone.v1.ZoomPhoneService/MakeCall`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number: phone,
+          customer_id: customerId || '',
+        }),
+      });
+
+      if (resp.ok) {
+        // Zoom API 発信成功 — Activity も backend 側で記録済み
+        console.log('Zoom Phone API: 発信成功');
+        onCallCreated?.();
+        return;
+      }
+
+      // 503 (Zoom 未設定) or 404 (Zoom ユーザー未紐付) → フォールバック
+      const errText = await resp.text();
+      console.warn('Zoom Phone API 発信失敗、フォールバック:', errText);
+    } catch (err) {
+      console.warn('Zoom Phone API エラー、フォールバック:', err);
     }
 
+    // 2. フォールバック: 従来の Activity 記録 + zoomphonecall: URL scheme
+    await saveCallHistoryLegacy(phone);
+    const formattedPhone = formatPhoneForTel(phone);
+    const link = document.createElement('a');
+    link.href = `zoomphonecall:${formattedPhone}`;
+    link.style.display = 'none';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // 旧方式の Activity 記録 (Zoom API 未設定時のフォールバック)
+  const saveCallHistoryLegacy = async (phone: string) => {
+    if (!user || !customerId || !bookId) return;
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
 
-      // デフォルトステータス（priorityが最小のもの）を取得
       const statusResponse = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
         method: 'POST',
         headers: {
@@ -102,22 +146,15 @@ export function PhoneInput({
         },
         body: JSON.stringify({ book_id: bookId }),
       });
-
       if (!statusResponse.ok) {
         console.error('デフォルトステータスの取得に失敗しました');
         return;
       }
-
       const statusData = await statusResponse.json();
       const defaultStatusId = statusData.status?.id;
+      if (!defaultStatusId) return;
 
-      if (!defaultStatusId) {
-        console.error('デフォルトステータスが見つかりません');
-        return;
-      }
-
-      // 架電履歴を保存
-      const callResponse = await fetch(`${apiUrl}/call.v1.CallService/CreateCall`, {
+      const callResponse = await fetch(`${apiUrl}/activity.v1.ActivityService/CreateActivityCall`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -129,36 +166,10 @@ export function PhoneInput({
           status_id: defaultStatusId,
         }),
       });
-
-      if (!callResponse.ok) {
-        console.error('架電履歴の保存に失敗しました');
-        return;
-      }
-
-      // 架電履歴の保存成功時にコールバックを呼び出し
-      onCallCreated?.();
+      if (callResponse.ok) onCallCreated?.();
     } catch (error) {
-      console.error('架電履歴の保存中にエラーが発生しました:', error);
+      console.error('架電履歴の保存中にエラー:', error);
     }
-  };
-
-  // Zoom Phoneで直接発信
-  const handlePhoneClick = async (e: React.MouseEvent, phone: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 架電履歴を先に保存
-    await saveCallHistory(phone);
-    
-    const formattedPhone = formatPhoneForTel(phone);
-    
-    // Zoom Phoneを起動（aタグを動的に作成してページ遷移を防ぐ）
-    const link = document.createElement('a');
-    link.href = `zoomphonecall:${formattedPhone}`;
-    link.style.display = 'none';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
   };
 
   if (isEditing) {
@@ -246,78 +257,56 @@ export function PhoneLink({ phone, className, customerId, bookId, onCallCreated 
     return phone.replace(/[-\s]/g, "");
   };
 
-  // 架電履歴を自動保存
-  const saveCallHistory = async (phone: string) => {
-    console.log('PhoneLink saveCallHistory called:', { user: !!user, customerId, bookId, phone });
-    if (!user || !customerId || !bookId) {
-      console.log('PhoneLink saveCallHistory: 必要な情報が不足しています', { user: !!user, customerId, bookId });
-      return;
-    }
+  // Phase 21: Zoom Phone API or legacy fallback (PhoneInput と同じロジック)
+  const handlePhoneClick = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user || !phone) return;
+
+    const token = user.accessToken;
+    const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
 
     try {
-      const token = await user.getIdToken();
-      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
-
-      // デフォルトステータス（priorityが最小のもの）を取得
-      const statusResponse = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ book_id: bookId }),
-      });
-
-      if (!statusResponse.ok) {
-        console.error('デフォルトステータスの取得に失敗しました');
-        return;
-      }
-
-      const statusData = await statusResponse.json();
-      const defaultStatusId = statusData.status?.id;
-
-      if (!defaultStatusId) {
-        console.error('デフォルトステータスが見つかりません');
-        return;
-      }
-
-      // 架電履歴を保存
-      const callResponse = await fetch(`${apiUrl}/call.v1.CallService/CreateCall`, {
+      const resp = await fetch(`${apiUrl}/zoomphone.v1.ZoomPhoneService/MakeCall`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          customer_id: customerId,
-          phone: phone,
-          status_id: defaultStatusId,
+          phone_number: phone,
+          customer_id: customerId || '',
         }),
       });
-
-      if (!callResponse.ok) {
-        console.error('架電履歴の保存に失敗しました');
+      if (resp.ok) {
+        onCallCreated?.();
         return;
       }
+    } catch { /* fallback */ }
 
-      // 架電履歴の保存成功時にコールバックを呼び出し
-      onCallCreated?.();
-    } catch (error) {
-      console.error('架電履歴の保存中にエラーが発生しました:', error);
+    // Fallback: legacy Activity 記録 + zoomphonecall: URL
+    if (customerId && bookId) {
+      try {
+        const statusResp = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ book_id: bookId }),
+        });
+        if (statusResp.ok) {
+          const statusData = await statusResp.json();
+          const sid = statusData.status?.id;
+          if (sid) {
+            const callResp = await fetch(`${apiUrl}/activity.v1.ActivityService/CreateActivityCall`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ customer_id: customerId, phone, status_id: sid }),
+            });
+            if (callResp.ok) onCallCreated?.();
+          }
+        }
+      } catch { /* ignore */ }
     }
-  };
-
-  // Zoom Phoneで直接発信
-  const handlePhoneClick = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    // 架電履歴を先に保存
-    await saveCallHistory(phone);
-    
     const formattedPhone = formatPhoneForTel(phone);
-    
-    // Zoom Phoneを起動（aタグを動的に作成してページ遷移を防ぐ）
     const link = document.createElement('a');
     link.href = `zoomphonecall:${formattedPhone}`;
     link.style.display = 'none';

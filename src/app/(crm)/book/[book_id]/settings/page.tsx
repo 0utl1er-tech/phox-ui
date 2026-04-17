@@ -3,6 +3,7 @@
 import { use } from "react";
 import StatusManagement from "@/components/crm/status-management";
 import UserAccessManagement from "@/components/crm/user-access-management";
+import MailTemplateManagement from "@/components/crm/mail-template-management";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { FiArrowLeft, FiSettings } from "react-icons/fi";
@@ -37,6 +38,11 @@ export default function BookSettingsPage({ params }: BookSettingsPageProps) {
         {/* ステータス管理 */}
         <div className="mt-6">
           <StatusManagement bookId={book_id} />
+        </div>
+
+        {/* メールテンプレート管理 */}
+        <div className="mt-6">
+          <MailTemplateManagement bookId={book_id} />
         </div>
       </div>
     </div>

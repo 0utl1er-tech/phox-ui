@@ -164,7 +164,7 @@ export function ContactMasterImportDialog({ open, onOpenChange, onImportSuccess 
 
     try {
       const content = await file.text()
-      const token = await user.getIdToken()
+      const token = user.accessToken
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082'
 
       // プログレスアニメーション

@@ -63,7 +63,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/permit.v1.PermitService/ListBookUsers`, {
@@ -89,7 +89,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
       }));
       setBookUsers(userList);
 
-      const currentUserPermit = userList.find((u: BookUser) => u.userId === user.uid);
+      const currentUserPermit = userList.find((u: BookUser) => u.userId === user.sub);
       setIsOwner(currentUserPermit?.role === "ROLE_OWNER");
     } catch (e: unknown) {
       console.error('Fetch error:', e);
@@ -103,7 +103,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
     if (!user) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/user.v1.UserService/ListCompanyUsers`, {
@@ -142,7 +142,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
       setIsAdding(true);
       setError(null);
       setSuccessMessage(null);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/permit.v1.PermitService/AddBookUser`, {
@@ -189,7 +189,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
 
     try {
       setError(null);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/permit.v1.PermitService/DeletePermit`, {
@@ -283,14 +283,14 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
           </div>
         )}
 
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-2xl overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
-                <TableHead className="text-white font-medium">ユーザー名</TableHead>
-                <TableHead className="text-white font-medium w-32 text-center">権限</TableHead>
+              <TableRow className="bg-gray-50 border-b">
+                <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">ユーザー名</TableHead>
+                <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-32 text-center">権限</TableHead>
                 {isOwner && (
-                  <TableHead className="text-white font-medium w-24 text-center">操作</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-24 text-center">操作</TableHead>
                 )}
               </TableRow>
             </TableHeader>
@@ -313,7 +313,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
                     <TableCell>
                       <div className="flex items-center gap-2">
                         {bookUser.userName}
-                        {bookUser.userId === user?.uid && (
+                        {bookUser.userId === user?.sub && (
                           <Badge variant="secondary" className="bg-blue-100 text-blue-800">
                             あなた
                           </Badge>
@@ -327,7 +327,7 @@ export default function UserAccessManagement({ bookId }: UserAccessManagementPro
                     </TableCell>
                     {isOwner && (
                       <TableCell className="text-center">
-                        {bookUser.role !== "ROLE_OWNER" && bookUser.userId !== user?.uid && (
+                        {bookUser.role !== "ROLE_OWNER" && bookUser.userId !== user?.sub && (
                           <Button
                             size="sm"
                             variant="ghost"

@@ -35,13 +35,15 @@ function Dialog({ open, onOpenChange, children }: DialogProps) {
   )
 }
 
-function DialogContent({ 
-  className, 
+function DialogContent({
+  className,
   children,
-  ...props 
+  ...props
 }: React.ComponentProps<"div">) {
   return (
     <div
+      role="dialog"
+      aria-modal="true"
       className={cn(
         "fixed left-1/2 top-1/2 z-50 w-full max-w-2xl -translate-x-1/2 -translate-y-1/2",
         "bg-white rounded-xl shadow-2xl border",

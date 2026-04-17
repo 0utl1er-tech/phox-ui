@@ -159,7 +159,7 @@ export function CSVImportDialog({ open, onOpenChange, onImportSuccess }: CSVImpo
     setImportProgress(10)
 
     try {
-      const token = await user.getIdToken()
+      const token = user.accessToken
       const fileContent = await file.arrayBuffer()
       const base64Content = btoa(
         new Uint8Array(fileContent).reduce(
@@ -180,7 +180,7 @@ export function CSVImportDialog({ open, onOpenChange, onImportSuccess }: CSVImpo
         body: JSON.stringify({
           file_name: file.name,
           file_content: base64Content,
-          owner_id: user.uid,
+          owner_id: user.sub,
         }),
       })
 
@@ -282,7 +282,7 @@ export function CSVImportDialog({ open, onOpenChange, onImportSuccess }: CSVImpo
       </div>
 
       <div className="flex-1 overflow-auto px-6 pb-4">
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-2xl overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="bg-gray-100">

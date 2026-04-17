@@ -2,38 +2,32 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
 import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
 import { FiSettings } from "react-icons/fi";
+import { NavbarSearchBar } from "./NavbarSearchBar";
 
 export default function Navbar() {
   const { isAuthenticated, user, isLoading } = useAuthStore();
   const router = useRouter();
 
-  const handleLogout = async () => {
-    try {
-      const firebaseAuth = auth();
-      await signOut(firebaseAuth);
-      router.push("/login");
-    } catch (error) {
-      console.error("Logout failed", error);
-    }
+  const handleLogout = () => {
+    router.push("/logout");
   };
 
   return (
-    <header className="flex justify-between items-center p-4 bg-white shadow-md h-20">
-      <Link href="/" className="flex items-center">
+    <header className="flex justify-between items-center p-4 bg-white shadow-md h-20 gap-4">
+      <Link href="/" className="flex items-center flex-shrink-0">
         <span className="text-2xl font-bold text-gray-800">Phox</span>
       </Link>
-      <div className="flex items-center space-x-4">
+      <NavbarSearchBar />
+      <div className="flex items-center space-x-4 flex-shrink-0">
         {isLoading ? (
           <div className="h-8 w-24 bg-gray-200 rounded animate-pulse" />
         ) : isAuthenticated ? (
           <>
             <span className="text-sm text-gray-600 hidden sm:inline">
-              {user?.displayName || user?.email}
+              {user?.name || user?.email}
             </span>
             <Button variant="ghost" size="icon" asChild title="ユーザー設定">
               <Link href="/settings">

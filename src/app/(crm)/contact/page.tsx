@@ -43,7 +43,7 @@ export default function ContactListPage() {
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/contact.v1.ContactService/ListAllContacts`, {
@@ -113,7 +113,7 @@ export default function ContactListPage() {
           </div>
         </div>
 
-        <Card className="shadow-soft border-0 bg-gradient-to-br from-white to-blue-50/30 backdrop-blur-sm">
+        <Card className="shadow-soft border-0 bg-white/80 backdrop-blur-sm">
           <CardHeader className="flex flex-row items-center gap-2">
             <FiPhone className="w-5 h-5 text-blue-600" />
             <CardTitle className="text-lg text-gray-900">連絡先一覧</CardTitle>
@@ -148,7 +148,7 @@ export default function ContactListPage() {
                 </Button>
               </div>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-2xl overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900">

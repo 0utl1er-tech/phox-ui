@@ -10,6 +10,7 @@ import { FiUpload, FiPlus } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import { ContactImportDialog } from "@/components/crm/contact-import-dialog";
 import { PhoneInput, PhoneLink } from "@/components/ui/phone-input";
+import { MailInput } from "@/components/ui/mail-input";
 
 interface Contact {
   id: string;
@@ -25,11 +26,23 @@ interface ContactInfoCardProps {
   customerId: string;
   bookId: string;
   customerPhone?: string;
+  customerMail?: string;
   onPhoneChange?: (phone: string) => void;
+  onCustomerMailChange?: (mail: string) => void;
   onCallCreated?: () => void;
+  onSendEmailClick?: () => void;
 }
 
-export default function ContactInfoCard({ customerId, bookId, customerPhone, onPhoneChange, onCallCreated }: ContactInfoCardProps) {
+export default function ContactInfoCard({
+  customerId,
+  bookId,
+  customerPhone,
+  customerMail,
+  onPhoneChange,
+  onCustomerMailChange,
+  onCallCreated,
+  onSendEmailClick,
+}: ContactInfoCardProps) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,7 +57,7 @@ export default function ContactInfoCard({ customerId, bookId, customerPhone, onP
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/contact.v1.ContactService/ListContact`, {
@@ -90,25 +103,30 @@ export default function ContactInfoCard({ customerId, bookId, customerPhone, onP
 
   return (
     <>
-      <Card className="shadow-soft border-0 bg-gradient-to-br from-white to-blue-50/30 backdrop-blur-sm hover:shadow-lg transition-all duration-300">
-        <CardHeader className="flex items-center gap-2">
-          <FaRegAddressBook className="w-5 h-5 text-blue-600" />
-          <CardTitle className="text-lg text-gray-900">連絡先情報</CardTitle>
-        </CardHeader>
-        <CardContent className="p-6 space-y-4">
-
-          {/* 代表番号 */}
+      <Card className="border border-gray-200 bg-white rounded-2xl shadow-sm">
+        <CardContent className="p-5 space-y-4">
+          {/* 代表者情報 */}
           <div className="space-y-2">
-            <label className="font-medium text-gray-700">代表番号</label>
-            <PhoneInput
-              value={customerPhone || ''}
-              onChange={onPhoneChange}
-              readOnly={!onPhoneChange}
-              placeholder="電話番号を入力"
-              customerId={customerId}
-              bookId={bookId}
-              onCallCreated={onCallCreated}
-            />
+            <h2 className="text-base font-semibold text-gray-900 pb-2 border-b border-gray-100">連絡先</h2>
+            <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">代表者情報</label>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <PhoneInput
+                value={customerPhone || ''}
+                onChange={onPhoneChange}
+                readOnly={!onPhoneChange}
+                placeholder="電話番号を入力"
+                customerId={customerId}
+                bookId={bookId}
+                onCallCreated={onCallCreated}
+              />
+              <MailInput
+                value={customerMail || ''}
+                onChange={onCustomerMailChange}
+                readOnly={!onCustomerMailChange}
+                placeholder="メールアドレスを入力"
+                onOpenSendDialog={onSendEmailClick}
+              />
+            </div>
           </div>
 
           <div className="flex justify-between items-center pt-3">
@@ -133,14 +151,14 @@ export default function ContactInfoCard({ customerId, bookId, customerPhone, onP
             </div>
           </div>
 
-          <div className="border rounded-lg overflow-hidden mt-3">
+          <div className="border rounded-2xl overflow-hidden mt-3">
             <Table>
               <TableHeader>
-                <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
-                  <TableHead className="text-white font-medium">担当者名</TableHead>
-                  <TableHead className="text-white font-medium">メール</TableHead>
-                  <TableHead className="text-white font-medium">電話番号</TableHead>
-                  <TableHead className="text-white font-medium">FAX</TableHead>
+                <TableRow className="bg-gray-50 border-b">
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">担当者名</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">メール</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">電話番号</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">FAX</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

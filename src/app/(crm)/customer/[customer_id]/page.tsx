@@ -4,8 +4,12 @@ import { useParams } from "next/navigation";
 import { useEffect, useState, useCallback, useRef } from "react";
 import CustomerInfoCard from "@/components/crm/detail/CustomerInfoCard";
 import ContactInfoCard from "@/components/crm/detail/ContactInfoCard";
-import CallManagementCard, { CallManagementCardRef } from "@/components/crm/detail/CallManagementCard";
+import ActivityHistoryCard, {
+  ActivityHistoryCardRef,
+} from "@/components/crm/detail/ActivityHistoryCard";
+import { SendEmailDialog } from "@/components/crm/detail/SendEmailDialog";
 import { useAuthStore } from "@/store/authStore";
+import { updateCustomer } from "@/app/(crm)/book/[book_id]/customer/[customer_id]/actions";
 
 interface Customer {
   id: string;
@@ -16,6 +20,7 @@ interface Customer {
   corporation: string;
   address: string;
   memo: string;
+  mail: string;
 }
 
 export default function CustomerDetailPage() {
@@ -23,13 +28,29 @@ export default function CustomerDetailPage() {
   const customerId = params.customer_id as string;
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSendEmailOpen, setIsSendEmailOpen] = useState(false);
   const user = useAuthStore((state) => state.user);
-  const callManagementRef = useRef<CallManagementCardRef>(null);
+  const activityHistoryRef = useRef<ActivityHistoryCardRef>(null);
 
-  const handleCallCreated = useCallback(() => {
-    // 架電履歴が作成された際にrefを通じてリフレッシュ
-    callManagementRef.current?.refreshCalls();
+  const handleActivityChanged = useCallback(() => {
+    activityHistoryRef.current?.refreshActivities();
   }, []);
+
+  // 代表メール変更ハンドラー
+  const handleCustomerMailChange = useCallback(async (mail: string) => {
+    if (!customer || !user) return;
+    try {
+      const token = user.accessToken;
+      const result = await updateCustomer({ id: customer.id, mail }, token);
+      if (result.success && result.customer) {
+        setCustomer(result.customer);
+      } else {
+        console.error('Failed to update mail:', result.error);
+      }
+    } catch (error) {
+      console.error('Failed to update mail:', error);
+    }
+  }, [customer, user]);
 
   useEffect(() => {
     const fetchCustomer = async () => {
@@ -39,9 +60,9 @@ export default function CustomerDetailPage() {
       }
 
       try {
-        const token = await user.getIdToken();
+        const token = user.accessToken;
         const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
-        
+
         const response = await fetch(`${apiUrl}/customer.v1.CustomerService/GetCustomer`, {
           method: 'POST',
           headers: {
@@ -62,6 +83,7 @@ export default function CustomerDetailPage() {
             corporation: data.customer?.corporation || '',
             address: data.customer?.address || '',
             memo: data.customer?.memo || '',
+            mail: data.customer?.mail || '',
           });
         }
       } catch (e) {
@@ -80,8 +102,7 @@ export default function CustomerDetailPage() {
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 pb-5">
           {/* 左側の3つのセクション */}
           <div className="space-y-6 lg:col-span-2">
-            {/* 顧客情報セクション */}
-            <CustomerInfoCard 
+            <CustomerInfoCard
               customer={customer}
               onCustomerUpdate={setCustomer}
             />
@@ -89,24 +110,39 @@ export default function CustomerDetailPage() {
 
           {/* 右側のセクション */}
           <div className="space-y-6 lg:col-span-3">
-            {/* 連絡先情報セクション */}
-            <ContactInfoCard 
+            <ContactInfoCard
               customerId={customerId}
               bookId={customer?.bookId || ""}
               customerPhone={customer?.phone}
-              onCallCreated={handleCallCreated}
+              customerMail={customer?.mail}
+              onCustomerMailChange={handleCustomerMailChange}
+              onCallCreated={handleActivityChanged}
+              onSendEmailClick={() => setIsSendEmailOpen(true)}
             />
-            
-            {/* コール担当セクション */}
-            <CallManagementCard 
-              ref={callManagementRef}
+
+            <ActivityHistoryCard
+              ref={activityHistoryRef}
               customerId={customerId}
               bookId={customer?.bookId || ""}
-              onCallCreated={handleCallCreated}
+              customerPhone={customer?.phone}
+              onActivityCreated={handleActivityChanged}
+              onSendEmailClick={() => setIsSendEmailOpen(true)}
             />
           </div>
         </div>
       </div>
+
+      <SendEmailDialog
+        open={isSendEmailOpen}
+        onOpenChange={setIsSendEmailOpen}
+        customerId={customerId}
+        bookId={customer?.bookId || ""}
+        customerMail={customer?.mail ?? ""}
+        customerName={customer?.name ?? ""}
+        customerCorporation={customer?.corporation ?? ""}
+        customerPhone={customer?.phone ?? ""}
+        onSent={handleActivityChanged}
+      />
     </div>
   );
 }

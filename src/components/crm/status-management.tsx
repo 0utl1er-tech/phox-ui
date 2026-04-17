@@ -197,7 +197,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/ListStatuses`, {
@@ -241,7 +241,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
 
     try {
       setIsCreating(true);
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/CreateStatus`, {
@@ -279,7 +279,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     if (!user || !editName.trim()) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/UpdateStatus`, {
@@ -312,7 +312,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     if (!user) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/UpdateStatus`, {
@@ -343,7 +343,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     if (!user) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/UpdateStatus`, {
@@ -375,7 +375,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     if (!confirm("このステータスを削除しますか？")) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/DeleteStatus`, {
@@ -403,7 +403,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
     if (!user) return;
 
     try {
-      const token = await user.getIdToken();
+      const token = user.accessToken;
       const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
       
       const response = await fetch(`${apiUrl}/status.v1.StatusService/UpdateStatus`, {
@@ -516,7 +516,7 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
         )}
 
         {/* ステータス一覧 */}
-        <div className="border rounded-lg overflow-hidden">
+        <div className="border rounded-2xl overflow-hidden">
           <p className="text-sm text-gray-500 px-4 py-2 bg-gray-50 border-b">
             💡 優先度列のアイコンをドラッグして順番を変更できます
           </p>
@@ -527,12 +527,12 @@ export default function StatusManagement({ bookId }: StatusManagementProps) {
           >
             <Table>
               <TableHeader>
-                <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
-                  <TableHead className="text-white font-medium w-20">優先度</TableHead>
-                  <TableHead className="text-white font-medium">ステータス名</TableHead>
-                  <TableHead className="text-white font-medium w-24 text-center">有効</TableHead>
-                  <TableHead className="text-white font-medium w-24 text-center">NG</TableHead>
-                  <TableHead className="text-white font-medium w-24 text-center">操作</TableHead>
+                <TableRow className="bg-gray-50 border-b">
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-20">優先度</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">ステータス名</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-24 text-center">有効</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-24 text-center">NG</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider w-24 text-center">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

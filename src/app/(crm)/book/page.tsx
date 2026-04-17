@@ -5,8 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { CSVImportDialog } from "@/components/crm/csv-import-dialog";
+import { CreateBookDialog } from "@/components/crm/create-book-dialog";
+import { DeleteBookConfirmDialog } from "@/components/crm/delete-book-confirm-dialog";
 import Link from "next/link";
-import { FiPlus, FiBook, FiUpload, FiSettings } from "react-icons/fi";
+import { FiPlus, FiBook, FiUpload, FiSettings, FiTrash2 } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 
 // Define the type for a single book
@@ -20,6 +22,8 @@ export default function BookListPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [bookToDelete, setBookToDelete] = useState<Book | null>(null);
   const user = useAuthStore((state) => state.user);
 
   const fetchBooks = useCallback(async () => {
@@ -30,7 +34,7 @@ export default function BookListPage() {
 
     try {
       setIsLoading(true);
-      const token = await user.getIdToken(true); // Force refresh to get a fresh token
+      const token = user.accessToken; // OIDC silent renewal keeps this fresh
       
       console.log('Fetching books with token:', token ? 'Token present' : 'No token');
       
@@ -94,7 +98,10 @@ export default function BookListPage() {
                 <FiUpload className="w-4 h-4 mr-2" />
                 CSVインポート
               </Button>
-              <Button className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+              <Button
+                className="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+                onClick={() => setIsCreateDialogOpen(true)}
+              >
                 <FiPlus className="w-4 h-4 mr-2" />
                 新しいリストを作成
               </Button>
@@ -116,7 +123,7 @@ export default function BookListPage() {
             ) : !user ? (
               <p className="text-gray-500">ログインしてください。</p>
             ) : (
-              <div className="border rounded-lg overflow-hidden">
+              <div className="border rounded-2xl overflow-hidden">
                 <Table>
                   <TableHeader>
                     <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
@@ -144,6 +151,15 @@ export default function BookListPage() {
                               <Link href={`/book/${book.id}`}>
                                 <Button variant="outline" size="sm">顧客を見る</Button>
                               </Link>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                aria-label="削除"
+                                title="リストを削除"
+                                onClick={() => setBookToDelete(book)}
+                              >
+                                <FiTrash2 className="w-4 h-4 text-red-600" />
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -168,6 +184,27 @@ export default function BookListPage() {
         onOpenChange={setIsImportDialogOpen}
         onImportSuccess={handleImportSuccess}
       />
+
+      <CreateBookDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        onCreated={() => {
+          fetchBooks();
+        }}
+      />
+
+      <DeleteBookConfirmDialog
+        open={bookToDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setBookToDelete(null);
+        }}
+        book={bookToDelete}
+        onDeleted={(bookId) => {
+          setBooks((prev) => prev.filter((b) => b.id !== bookId));
+          setBookToDelete(null);
+        }}
+      />
     </div>
   );
-} 
+}
+

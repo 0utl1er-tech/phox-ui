@@ -1,18 +1,25 @@
-import { create } from 'zustand';
-import { User } from 'firebase/auth';
+import { create } from "zustand";
+
+// Application-side user shape. Populated from an OIDC (Keycloak) access token
+// via the OidcToStoreBridge in AuthProvider.tsx. Kept intentionally small:
+// only the fields the rest of the app actually needs.
+export interface AuthUser {
+  sub: string;
+  email?: string;
+  name?: string;
+  accessToken: string;
+}
 
 interface AuthState {
-  user: User | null;
+  user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setUser: (user: User | null) => void;
-  setLoading: (loading: boolean) => void;
+  setUser: (user: AuthUser | null, loading: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   isAuthenticated: false,
-  isLoading: true, // Initially loading until auth state is checked
-  setUser: (user) => set({ user, isAuthenticated: !!user, isLoading: false }),
-  setLoading: (loading) => set({ isLoading: loading }),
+  isLoading: true, // initially loading until the OIDC provider finishes hydrating
+  setUser: (user, loading) => set({ user, isAuthenticated: !!user, isLoading: loading }),
 }));
