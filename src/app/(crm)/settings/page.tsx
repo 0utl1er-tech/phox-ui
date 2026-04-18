@@ -110,9 +110,8 @@ export default function UserSettingsPage() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          // Connect-Go accepts both snake_case (proto field) and camelCase
-          // (protojson default). Send both to future-proof against either.
-          userId: u.id,
+          // protojson rejects duplicate fields even if one is snake_case
+          // and the other camelCase. Use the proto schema name.
           user_id: u.id,
           name: keycloakDisplayName(u),
         }),
