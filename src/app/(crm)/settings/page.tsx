@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus } from "react-icons/fi";
+import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus, FiDownload, FiCheck } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-connection-card";
 import ICalFeedCard from "@/components/crm/ical-feed-card";
@@ -37,6 +37,102 @@ export default function UserSettingsPage() {
   const [isAddingUser, setIsAddingUser] = useState(false);
   const [addUserError, setAddUserError] = useState<string | null>(null);
   const [addUserSuccess, setAddUserSuccess] = useState<string | null>(null);
+
+  // Keycloak-import workflow: admin fetches every user from the `company`
+  // realm and links the ones that aren't yet represented by a Phox DB row.
+  // The JIT interceptor will create these rows anyway on first API call,
+  // but this panel lets an admin front-load them so permissions can be
+  // granted ahead of the user's first login.
+  interface KeycloakUser {
+    id: string;
+    username: string;
+    email: string;
+    firstName?: string;
+    first_name?: string;
+    lastName?: string;
+    last_name?: string;
+    linked: boolean;
+  }
+  const [keycloakUsers, setKeycloakUsers] = useState<KeycloakUser[]>([]);
+  const [keycloakSearch, setKeycloakSearch] = useState("");
+  const [isLoadingKeycloak, setIsLoadingKeycloak] = useState(false);
+  const [keycloakError, setKeycloakError] = useState<string | null>(null);
+  const [importingId, setImportingId] = useState<string | null>(null);
+
+  const keycloakDisplayName = (u: KeycloakUser): string => {
+    const first = u.firstName ?? u.first_name ?? "";
+    const last = u.lastName ?? u.last_name ?? "";
+    const full = `${first} ${last}`.trim();
+    return full || u.username || u.email || u.id;
+  };
+
+  const loadKeycloakUsers = useCallback(async () => {
+    if (!authUser) return;
+    try {
+      setIsLoadingKeycloak(true);
+      setKeycloakError(null);
+      const token = authUser.accessToken;
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
+      const response = await fetch(`${apiUrl}/user.v1.UserService/ListKeycloakUsers`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ search: keycloakSearch, max: 100 }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Keycloakユーザー一覧の取得に失敗しました: ${errorText}`);
+      }
+      const data = await response.json();
+      setKeycloakUsers(data.users || []);
+    } catch (e) {
+      setKeycloakError(e instanceof Error ? e.message : "予期しないエラーが発生しました");
+    } finally {
+      setIsLoadingKeycloak(false);
+    }
+  }, [authUser, keycloakSearch]);
+
+  const importKeycloakUser = async (u: KeycloakUser) => {
+    if (!authUser) return;
+    try {
+      setImportingId(u.id);
+      setKeycloakError(null);
+      const token = authUser.accessToken;
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
+      // AddCompanyUser is the existing RPC that takes a Keycloak UUID
+      // and creates the Phox User row. No new backend method needed.
+      const response = await fetch(`${apiUrl}/user.v1.UserService/AddCompanyUser`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          // Connect-Go accepts both snake_case (proto field) and camelCase
+          // (protojson default). Send both to future-proof against either.
+          userId: u.id,
+          user_id: u.id,
+          name: keycloakDisplayName(u),
+        }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`取り込みに失敗しました: ${errorText}`);
+      }
+      // Flip the flag optimistically, then refresh both lists so
+      // "会社のユーザー一覧" shows the new entry.
+      setKeycloakUsers((prev) =>
+        prev.map((x) => (x.id === u.id ? { ...x, linked: true } : x))
+      );
+      fetchCompanyUsers();
+    } catch (e) {
+      setKeycloakError(e instanceof Error ? e.message : "予期しないエラーが発生しました");
+    } finally {
+      setImportingId(null);
+    }
+  };
 
   const fetchUser = useCallback(async () => {
     if (!authUser) {
@@ -454,6 +550,89 @@ export default function UserSettingsPage() {
                           <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
                             あなた
                           </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="shadow-soft border-0 bg-white/80 backdrop-blur-sm">
+              <CardHeader>
+                <CardTitle className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                  <FiDownload className="w-5 h-5" />
+                  Keycloak からユーザーを取り込む
+                </CardTitle>
+                <CardDescription>
+                  Keycloak 側に登録済みのユーザーを Phox に紐付けます。
+                  初回ログイン時にも自動紐付けされますが、事前に role 付与したい場合はここから取り込んでください。
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="ユーザー名 / メールで検索 (空欄で全件)"
+                    value={keycloakSearch}
+                    onChange={(e) => setKeycloakSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") loadKeycloakUsers();
+                    }}
+                  />
+                  <Button
+                    onClick={loadKeycloakUsers}
+                    disabled={isLoadingKeycloak}
+                  >
+                    {isLoadingKeycloak ? (
+                      <FiLoader className="w-4 h-4 animate-spin" />
+                    ) : (
+                      "表示"
+                    )}
+                  </Button>
+                </div>
+
+                {keycloakError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-sm text-red-600">{keycloakError}</p>
+                  </div>
+                )}
+
+                {keycloakUsers.length === 0 && !isLoadingKeycloak && (
+                  <p className="text-sm text-gray-500 text-center py-4">
+                    「表示」を押すと Keycloak のユーザー一覧が表示されます。
+                  </p>
+                )}
+
+                {keycloakUsers.length > 0 && (
+                  <div className="divide-y divide-gray-200">
+                    {keycloakUsers.map((ku) => (
+                      <div key={ku.id} className="py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">
+                            {keycloakDisplayName(ku)}
+                          </p>
+                          <p className="text-sm text-gray-500 truncate">
+                            {ku.username} / {ku.email || "(メール未設定)"}
+                          </p>
+                        </div>
+                        {ku.linked ? (
+                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full flex items-center gap-1 shrink-0">
+                            <FiCheck className="w-3 h-3" />
+                            連携済
+                          </span>
+                        ) : (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => importKeycloakUser(ku)}
+                            disabled={importingId === ku.id}
+                          >
+                            {importingId === ku.id ? (
+                              <FiLoader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              "取り込む"
+                            )}
+                          </Button>
                         )}
                       </div>
                     ))}
