@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus, FiDownload, FiCheck } from "react-icons/fi";
+import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus, FiDownload, FiCheck, FiTrash2 } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-connection-card";
 import ICalFeedCard from "@/components/crm/ical-feed-card";
@@ -93,6 +93,57 @@ export default function UserSettingsPage() {
       setIsLoadingKeycloak(false);
     }
   }, [authUser, keycloakSearch]);
+
+  // Delete a company user: backend disables Keycloak + deletes Phox DB row
+  // (FK CASCADE wipes Activity/Permit/Redial/Token/iCalFeed for that user).
+  // Blocked server-side for non-owner callers and for self-deletion, but we
+  // still confirm at the UI to avoid accidental clicks.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const deleteCompanyUser = async (target: User) => {
+    if (!authUser) return;
+    if (target.id === user?.id) {
+      alert("自分自身は削除できません");
+      return;
+    }
+    if (!window.confirm(
+      `${target.name} を Phox の会社ユーザー一覧から削除します。\n\n` +
+      `この操作で消えるもの:\n` +
+      ` - アクティビティ履歴 / 予定 (Redial) / ブックへのアクセス権\n\n` +
+      `Keycloak 側のアカウントは残ります。本人がログインすれば viewer 権限で再作成されます。\n` +
+      `完全にアクセスを止めたい場合は Keycloak 側で該当ユーザーを無効化してください。\n\n` +
+      `よろしいですか?`
+    )) return;
+
+    try {
+      setDeletingId(target.id);
+      const token = authUser.accessToken;
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
+      const response = await fetch(`${apiUrl}/user.v1.UserService/DeleteCompanyUser`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ user_id: target.id }),
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`削除に失敗しました: ${errorText}`);
+      }
+      setCompanyUsers((prev) => prev.filter((u) => u.id !== target.id));
+      // If the deleted user was also shown in the Keycloak import panel,
+      // flip their linked flag back to false so the row reverts to an
+      // "import" button (the KC side is disabled but still visible).
+      setKeycloakUsers((prev) =>
+        prev.map((ku) => (ku.id === target.id ? { ...ku, linked: false } : ku))
+      );
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "予期しないエラーが発生しました");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const importKeycloakUser = async (u: KeycloakUser) => {
     if (!authUser) return;
@@ -540,15 +591,35 @@ export default function UserSettingsPage() {
                 ) : (
                   <div className="divide-y divide-gray-200">
                     {companyUsers.map((companyUser) => (
-                      <div key={companyUser.id} className="py-4 flex items-center justify-between">
-                        <div>
-                          <p className="font-medium text-gray-900">{companyUser.name}</p>
-                          <p className="text-sm text-gray-500">{companyUser.id}</p>
+                      <div key={companyUser.id} className="py-4 flex items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-gray-900 truncate">{companyUser.name}</p>
+                          <p className="text-sm text-gray-500 truncate">{companyUser.id}</p>
                         </div>
-                        {companyUser.id === user?.id && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full">
+                        {companyUser.id === user?.id ? (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded-full shrink-0">
                             あなた
                           </span>
+                        ) : (
+                          // The delete button is always rendered for other
+                          // users — the backend enforces owner-only; a
+                          // non-owner who clicks gets a 403 alert.
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => deleteCompanyUser(companyUser)}
+                            disabled={deletingId === companyUser.id}
+                            className="text-red-600 hover:text-red-700 hover:bg-red-50 shrink-0"
+                          >
+                            {deletingId === companyUser.id ? (
+                              <FiLoader className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <FiTrash2 className="w-4 h-4 mr-1" />
+                                削除
+                              </>
+                            )}
+                          </Button>
                         )}
                       </div>
                     ))}
