@@ -327,35 +327,60 @@ export default function CustomerInfoCard({ customer, onCustomerUpdate }: Custome
 
   const [isInitialized, setIsInitialized] = useState(false);
   const lastSavedData = useRef<typeof formData | null>(null);
+  const initializedCustomerId = useRef<string | null>(null);
 
+  // BUG FIX (2026-04-21):
+  // Previously `[customer]` as dep re-ran on every new `customer` object
+  // reference — including after sibling updates (phone/mail) caused the
+  // parent page to call setCustomer(). That overwrote in-progress edits in
+  // this card's formData, surfacing as "入力した内容が突然消えた" for
+  // operators. Now we re-initialise only when the customer IDENTITY
+  // changes (navigation to a different customer), not on every server-
+  // side data refresh for the same customer.
   useEffect(() => {
-    if (customer) {
-      const newData = {
-        category: customer.category || "",
-        corporation: customer.corporation || "",
-        name: customer.name || "",
-        address: customer.address || "",
-        memo: customer.memo || "",
-      };
-      setFormData(newData);
-      lastSavedData.current = newData;
-      setIsInitialized(true);
-    }
+    if (!customer) return;
+    if (initializedCustomerId.current === customer.id) return;
+
+    const newData = {
+      category: customer.category || "",
+      corporation: customer.corporation || "",
+      name: customer.name || "",
+      address: customer.address || "",
+      memo: customer.memo || "",
+    };
+    setFormData(newData);
+    lastSavedData.current = newData;
+    initializedCustomerId.current = customer.id;
+    setIsInitialized(true);
   }, [customer]);
 
   const saveCustomer = useCallback(async () => {
     if (!customer?.id || !user || !isInitialized) return;
+    if (!lastSavedData.current) return;
 
-    if (
-      lastSavedData.current &&
-      formData.category === lastSavedData.current.category &&
-      formData.corporation === lastSavedData.current.corporation &&
-      formData.name === lastSavedData.current.name &&
-      formData.address === lastSavedData.current.address &&
-      formData.memo === lastSavedData.current.memo
-    ) {
-      return;
-    }
+    // Diff against last known server state. Only send fields that actually
+    // changed. Untouched fields become `undefined` in the request, which
+    // proto3 `optional` serialises as absent → backend's SQL COALESCE keeps
+    // the existing DB value. This prevents clobbering on race conditions
+    // where another write-path (e.g. mail update) refreshes `customer`
+    // with a newer server snapshot while this card had stale initial data.
+    const diff: {
+      category?: string;
+      corporation?: string;
+      name?: string;
+      address?: string;
+      memo?: string;
+    } = {};
+    let changed = false;
+    (["category", "corporation", "name", "address", "memo"] as const).forEach(
+      (key) => {
+        if (formData[key] !== lastSavedData.current![key]) {
+          diff[key] = formData[key];
+          changed = true;
+        }
+      },
+    );
+    if (!changed) return;
 
     try {
       const token = user.accessToken;
@@ -365,11 +390,7 @@ export default function CustomerInfoCard({ customer, onCustomerUpdate }: Custome
         const result = await updateCustomer(
           {
             id: customer.id,
-            category: formData.category,
-            corporation: formData.corporation,
-            name: formData.name,
-            address: formData.address,
-            memo: formData.memo,
+            ...diff,
           },
           token,
         );
