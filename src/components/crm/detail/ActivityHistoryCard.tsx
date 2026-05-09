@@ -40,10 +40,12 @@ import {
   FiRefreshCw,
   FiAlertTriangle,
   FiPlus,
+  FiPlayCircle,
 } from "react-icons/fi";
 import { PhoneLink } from "@/components/ui/phone-input";
 import { RedialEditDialog, type RedialDraft, type RedialSyncStatus } from "./RedialEditDialog";
 import { EmailDetailDialog } from "./EmailDetailDialog";
+import { RecordingPlayDialog } from "./RecordingPlayDialog";
 
 export type ActivityFilter = "all" | "call" | "email" | "redial";
 
@@ -64,6 +66,10 @@ interface Activity {
   subject?: string;
   body?: string;
   occurredAt: string;
+  // Phase 22: Zoom Phone 通話録音メタ。recording 実体は s3:// で別途保存され、
+  // 再生 URL は GetActivityRecording RPC で短命 signed URL を取りに行く。
+  hasRecording?: boolean;
+  durationSeconds?: number;
 }
 
 interface Redial {
@@ -141,6 +147,8 @@ function normalizeActivity(raw: any): Activity {
     subject: raw.subject,
     body: raw.body,
     occurredAt: raw.occurredAt ?? raw.occurred_at ?? "",
+    hasRecording: raw.hasRecording ?? raw.has_recording ?? false,
+    durationSeconds: raw.durationSeconds ?? raw.duration_seconds,
   };
 }
 
@@ -185,6 +193,10 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
     // メール詳細 dialog
     const [emailDetailOpen, setEmailDetailOpen] = useState(false);
     const [selectedEmail, setSelectedEmail] = useState<Activity | null>(null);
+
+    // 録音再生 dialog (Phase 22b)
+    const [recordingOpen, setRecordingOpen] = useState(false);
+    const [recordingActivity, setRecordingActivity] = useState<Activity | null>(null);
 
     // 直近の fetch を ref に保存し、useImperativeHandle から安定して呼ぶ。
     const fetchAllRef = useRef<() => Promise<void>>(() => Promise.resolve());
@@ -561,6 +573,10 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
                             setSelectedEmail(a);
                             setEmailDetailOpen(true);
                           },
+                          onPlayRecording: (a) => {
+                            setRecordingActivity(a);
+                            setRecordingOpen(true);
+                          },
                         });
                       }
                       return renderRedialRow({
@@ -606,6 +622,15 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
               : null
           }
         />
+
+        <RecordingPlayDialog
+          open={recordingOpen}
+          onOpenChange={setRecordingOpen}
+          activityId={recordingActivity?.id ?? null}
+          accessToken={accessToken}
+          occurredAt={recordingActivity?.occurredAt ?? ""}
+          durationSeconds={recordingActivity?.durationSeconds}
+        />
       </>
     );
   },
@@ -638,6 +663,7 @@ function renderActivityRow(args: {
   onStatusChange: (activityId: string, newStatusId: string) => void;
   onCallCreated: () => void;
   onEmailClick?: (a: Activity) => void;
+  onPlayRecording?: (a: Activity) => void;
 }) {
   const {
     a,
@@ -650,6 +676,7 @@ function renderActivityRow(args: {
     onStatusChange,
     onCallCreated,
     onEmailClick,
+    onPlayRecording,
   } = args;
   const { date, time } = formatDateTime(a.occurredAt);
   const isCall = a.type === "call";
@@ -686,12 +713,28 @@ function renderActivityRow(args: {
       </TableCell>
       <TableCell className="max-w-md">
         {isCall ? (
-          <PhoneLink
-            phone={a.phone ?? ""}
-            customerId={customerId}
-            bookId={bookId}
-            onCallCreated={onCallCreated}
-          />
+          <div className="flex items-center gap-2">
+            <PhoneLink
+              phone={a.phone ?? ""}
+              customerId={customerId}
+              bookId={bookId}
+              onCallCreated={onCallCreated}
+            />
+            {a.hasRecording && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPlayRecording?.(a);
+                }}
+                title="通話録音を再生"
+                className="inline-flex items-center justify-center text-blue-600 hover:text-blue-800"
+                data-testid="recording-play-button"
+              >
+                <FiPlayCircle className="w-5 h-5" />
+              </button>
+            )}
+          </div>
         ) : (
           <div className="truncate">
             <div className="font-medium text-gray-900 truncate">{a.subject || "(件名なし)"}</div>
