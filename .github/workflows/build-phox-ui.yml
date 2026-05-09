@@ -1,62 +1,62 @@
-name: Build and Push phox-ui to Artifact Registry
+name: Build and push phox-ui to Harbor
+
+# 旧: GCP Artifact Registry (asia-northeast1-docker.pkg.dev/phoxtrot/phox)
+# 新: 0UTL1ER 自前 Harbor (harbor.0utl1er.tech/phox/...) — GCP 移行に伴う書換。
+#
+# 認証情報 (HARBOR_USERNAME / HARBOR_PASSWORD) は Forgejo Actions repo secret。
+# 中身は project-scoped robot `robot$phox+forgejo-ci` (push+pull only)、
+# phox-customer と同じ robot を再登録している (phox/* 配下を共有するため)。
+#
+# NEXT_PUBLIC_* は browser bundle に焼き込まれる public な値で secret では
+# 無いので、変更頻度が低いものは workflow に直書きしている (= ENV を変えるなら
+# この yaml の PR を切る、という運用で十分)。Keycloak 側の client_id を
+# `phox-ui` から変える時はここも合わせて更新。
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [main]
+  # 緊急時の手動 rebuild 用。
+  workflow_dispatch: {}
 
 env:
-  PROJECT_ID: phoxtrot
-  REGION: asia-northeast1
-  REPOSITORY: phox
-  IMAGE: phox-ui
+  REGISTRY: harbor.0utl1er.tech
+  IMAGE: phox/phox-ui
+
+# main 連続 push を 1 ジョブに絞る (古い build を残しても意味がない)。
+concurrency:
+  group: build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Login to Harbor
+        uses: docker/login-action@v3
         with:
-          credentials_json: ${{ secrets.GCP_SA_KEY }}
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.HARBOR_USERNAME }}
+          password: ${{ secrets.HARBOR_PASSWORD }}
 
-      - name: Set up Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Configure Docker for Artifact Registry
-        run: |
-          gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
-
-      - name: Build Docker image
-        run: |
-          docker build \
-            --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${{ secrets.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
-            --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ secrets.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
-            --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${{ secrets.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
-            --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="${{ secrets.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
-            --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ secrets.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
-            --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${{ secrets.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
-            --build-arg NEXT_PUBLIC_BACKEND_URL="${{ secrets.NEXT_PUBLIC_BACKEND_URL }}" \
-            -t ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }} .
-          docker tag ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }} \
-                     ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
-
-      - name: Push Docker image to Artifact Registry
-        run: |
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest
-
-      - name: Output image details
-        run: |
-          echo "Image pushed successfully!"
-          echo "Image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:${{ github.sha }}"
-          echo "Latest: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPOSITORY }}/${{ env.IMAGE }}:latest"
+      # NEXT_PUBLIC_* は build-arg として Dockerfile (builder stage) に渡る。
+      # browser bundle に焼き込まれるので runtime env では変更できない。
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          build-args: |
+            NEXT_PUBLIC_BACKEND_URL=https://phox-api.0utl1er.tech
+            NEXT_PUBLIC_KEYCLOAK_URL=https://auth.0utl1er.tech
+            NEXT_PUBLIC_KEYCLOAK_REALM=company
+            NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=phox-ui
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE }}:latest
+          cache-from: type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}/cache:buildx
+          cache-to:   type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE }}/cache:buildx,mode=max
