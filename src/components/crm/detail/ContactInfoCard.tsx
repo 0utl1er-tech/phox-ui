@@ -9,6 +9,7 @@ import { FaRegAddressBook } from "react-icons/fa";
 import { FiUpload, FiPlus } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import { ContactImportDialog } from "@/components/crm/contact-import-dialog";
+import { CreateContactDialog } from "@/components/crm/detail/CreateContactDialog";
 import { PhoneInput, PhoneLink } from "@/components/ui/phone-input";
 import { MailInput } from "@/components/ui/mail-input";
 
@@ -47,6 +48,7 @@ export default function ContactInfoCard({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const user = useAuthStore((state) => state.user);
 
   const fetchContacts = useCallback(async () => {
@@ -140,10 +142,11 @@ export default function ContactInfoCard({
                 <FiUpload className="w-4 h-4 mr-1" />
                 CSVインポート
               </Button>
-              <Button 
-                variant="outline" 
+              <Button
+                variant="outline"
                 size="sm"
                 className="border-gray-300 hover:bg-blue-450 bg-blue-500 text-white"
+                onClick={() => setIsCreateDialogOpen(true)}
               >
                 <FiPlus className="w-4 h-4 mr-1" />
                 新規作成
@@ -208,6 +211,13 @@ export default function ContactInfoCard({
         onOpenChange={setIsImportDialogOpen}
         customerId={customerId}
         onImportSuccess={handleImportSuccess}
+      />
+
+      <CreateContactDialog
+        open={isCreateDialogOpen}
+        onOpenChange={setIsCreateDialogOpen}
+        customerId={customerId}
+        onCreated={fetchContacts}
       />
     </>
   );

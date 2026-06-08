@@ -46,6 +46,7 @@ import { PhoneLink } from "@/components/ui/phone-input";
 import { RedialEditDialog, type RedialDraft, type RedialSyncStatus } from "./RedialEditDialog";
 import { EmailDetailDialog } from "./EmailDetailDialog";
 import { RecordingPlayDialog } from "./RecordingPlayDialog";
+import { CreateActivityCallDialog } from "./CreateActivityCallDialog";
 
 export type ActivityFilter = "all" | "call" | "email" | "redial";
 
@@ -197,6 +198,9 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
     // 録音再生 dialog (Phase 22b)
     const [recordingOpen, setRecordingOpen] = useState(false);
     const [recordingActivity, setRecordingActivity] = useState<Activity | null>(null);
+
+    // コール手動追加 dialog
+    const [createCallOpen, setCreateCallOpen] = useState(false);
 
     // 直近の fetch を ref に保存し、useImperativeHandle から安定して呼ぶ。
     const fetchAllRef = useRef<() => Promise<void>>(() => Promise.resolve());
@@ -497,6 +501,16 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
                   type="button"
                   variant="outline"
                   size="sm"
+                  onClick={() => setCreateCallOpen(true)}
+                  aria-label="コール追加"
+                >
+                  <FiPhone className="w-4 h-4 mr-1" />
+                  コール追加
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
                   onClick={() => onSendEmailClick?.()}
                 >
                   <FiMail className="w-4 h-4 mr-1" />
@@ -630,6 +644,18 @@ const ActivityHistoryCard = forwardRef<ActivityHistoryCardRef, ActivityHistoryCa
           accessToken={accessToken}
           occurredAt={recordingActivity?.occurredAt ?? ""}
           durationSeconds={recordingActivity?.durationSeconds}
+        />
+
+        <CreateActivityCallDialog
+          open={createCallOpen}
+          onOpenChange={setCreateCallOpen}
+          customerId={customerId}
+          customerPhone={customerPhone}
+          statuses={statuses}
+          onCreated={() => {
+            void fetchAll();
+            onActivityCreated?.();
+          }}
         />
       </>
     );
