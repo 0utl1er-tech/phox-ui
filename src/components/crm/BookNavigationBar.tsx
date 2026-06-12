@@ -6,6 +6,8 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiArrowLeft,
+  FiActivity,
+  FiBarChart2,
   FiBook,
   FiSettings,
 } from "react-icons/fi";
@@ -149,6 +151,26 @@ export default function BookNavigationBar({ bookId, customerId }: BookNavigation
                   <div className="w-px h-5 bg-gray-200 ml-1" />
                 </div>
               )}
+
+              {/* 活動フィード */}
+              <button
+                type="button"
+                onClick={() => router.push(`/book/${bookId}/activity`)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                title="活動フィード"
+              >
+                <FiActivity className="w-4 h-4 text-gray-500" />
+              </button>
+
+              {/* 集計 */}
+              <button
+                type="button"
+                onClick={() => router.push(`/book/${bookId}/stats`)}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                title="集計"
+              >
+                <FiBarChart2 className="w-4 h-4 text-gray-500" />
+              </button>
 
               {/* Book 設定 */}
               <button
