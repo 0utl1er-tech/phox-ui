@@ -124,12 +124,13 @@ export default function MailboxManagement() {
   }, [fetchMailboxes, fetchCompanyUsers]);
 
   const handleCreate = async () => {
-    if (!newAddress || !newPassword) return;
+    if (!newAddress) return;
     setCreating(true);
     try {
       await post("/mailbox.v1.MailboxService/CreateMailbox", {
         address: newAddress,
-        password: newPassword,
+        // 空なら Phox が mailu にアカウントを作りパスワードを自動生成する。
+        ...(newPassword ? { password: newPassword } : {}),
         display_name: newDisplayName,
       });
       setNewAddress("");
@@ -241,10 +242,10 @@ export default function MailboxManagement() {
             <Input placeholder="営業窓口" value={newDisplayName} onChange={(e) => setNewDisplayName(e.target.value)} />
           </div>
           <div className="flex-1 min-w-[160px]">
-            <label className="text-xs text-gray-500">パスワード (mailu)</label>
-            <Input type="password" placeholder="••••••••" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+            <label className="text-xs text-gray-500">パスワード</label>
+            <Input type="password" placeholder="空ならPhoxが自動生成" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
           </div>
-          <Button onClick={handleCreate} disabled={creating || !newAddress || !newPassword}>
+          <Button onClick={handleCreate} disabled={creating || !newAddress}>
             <FiPlus className="w-4 h-4 mr-1" />
             {creating ? "登録中..." : "登録"}
           </Button>
