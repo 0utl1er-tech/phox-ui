@@ -84,6 +84,11 @@ export function SendEmailDialog({
   const [templates, setTemplates] = useState<MailTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
 
+  // Phase 25: 送信元メールボックス。空 = 自分として送信 (レガシー)。
+  // editor 以上の MailboxPermit を持つメールボックスだけ選べる。
+  const [mailboxes, setMailboxes] = useState<{ id: string; address: string; displayName: string }[]>([]);
+  const [selectedMailboxId, setSelectedMailboxId] = useState("");
+
   // Dialog を閉じたらリセット
   useEffect(() => {
     if (!open) {
@@ -95,6 +100,7 @@ export function SendEmailDialog({
       setError(null);
       setSelectedTemplateId("");
       setTemplates([]);
+      setSelectedMailboxId("");
     }
   }, [open]);
 
@@ -130,6 +136,42 @@ export function SendEmailDialog({
     };
     void load();
   }, [open, accessToken, bookId]);
+
+  // Phase 25: 開いたときに送信可能なメールボックス一覧を fetch。
+  // MailboxService 未デプロイ環境では 404/501 になるだけなので握りつぶす。
+  useEffect(() => {
+    if (!open || !accessToken) return;
+    const load = async () => {
+      const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
+      try {
+        const response = await fetch(
+          `${apiUrl}/mailbox.v1.MailboxService/ListMailboxes`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({}),
+          },
+        );
+        if (!response.ok) return;
+        const data = await response.json();
+        setMailboxes(
+          (data.mailboxes ?? [])
+            .filter((m: any) => (m.active ?? false) && (m.role === "ROLE_EDITOR" || m.role === "ROLE_OWNER"))
+            .map((m: any) => ({
+              id: m.id ?? "",
+              address: m.address ?? "",
+              displayName: m.displayName ?? m.display_name ?? "",
+            })),
+        );
+      } catch {
+        /* メールボックス selector が出ないだけ */
+      }
+    };
+    void load();
+  }, [open, accessToken]);
 
   const buildVars = (): TemplateVars => ({
     customer_name: customerName ?? "",
@@ -217,6 +259,9 @@ export function SendEmailDialog({
       if (cc.trim()) {
         payload.mail_cc = cc.trim();
       }
+      if (selectedMailboxId) {
+        payload.mailbox_id = selectedMailboxId;
+      }
       const response = await fetch(
         `${apiUrl}/activity.v1.ActivityService/CreateActivityEmailSent`,
         {
@@ -269,6 +314,36 @@ export function SendEmailDialog({
               この顧客に紐づくメールアドレスがありません。連絡先を追加するか、
               顧客情報にメールアドレスを設定してください。
             </p>
+          )}
+
+          {mailboxes.length > 0 && (
+            <div className="space-y-1">
+              <label htmlFor="send-email-from" className="text-sm font-medium text-gray-700">
+                送信元
+              </label>
+              <select
+                id="send-email-from"
+                aria-label="送信元メールボックス"
+                value={selectedMailboxId}
+                onChange={(e) => setSelectedMailboxId(e.target.value)}
+                disabled={isSubmitting}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm"
+              >
+                <option value="">
+                  自分として送信 ({senderMail || "Keycloak の email"})
+                </option>
+                {mailboxes.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.displayName ? `${m.displayName} <${m.address}>` : m.address}
+                  </option>
+                ))}
+              </select>
+              {selectedMailboxId && (
+                <p className="text-xs text-gray-500">
+                  このメールボックスとして送信します。返信も同じメールボックスに届き、自動で活動履歴に取り込まれます。
+                </p>
+              )}
+            </div>
           )}
 
           <div className="space-y-1">

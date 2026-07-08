@@ -8,6 +8,7 @@ import { FiUser, FiSave, FiLoader, FiUsers, FiUserPlus, FiDownload, FiCheck, FiT
 import { useAuthStore } from "@/store/authStore";
 import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-connection-card";
 import ICalFeedCard from "@/components/crm/ical-feed-card";
+import MailboxManagement from "@/components/crm/mailbox-management";
 
 interface User {
   id: string;
@@ -478,6 +479,9 @@ export default function UserSettingsPage() {
 
         {/* Phase 20: Google Calendar OAuth 連携 (Workspace 契約 or OAuth 審査通過時のみ) */}
         {authUser && <GoogleCalendarConnectionCard />}
+
+        {/* Phase 25: 会社共有メールボックス管理 */}
+        {authUser && <MailboxManagement />}
 
         {user?.company && (
           <>
