@@ -79,11 +79,27 @@ export function CampaignChart({ days: allDays }: { days: CampaignDailyStat[] }) 
   // hover: データ点 index + コンテナ内 px 座標 (ツールチップ配置用)
   const [hover, setHover] = useState<{ index: number; px: number; width: number } | null>(null);
 
-  // 直近 N 日にスライス (allDays は 0 埋め済み・昇順・今日まで)。
-  const days = useMemo(
-    () => (rangeDays === 0 ? allDays : allDays.slice(-rangeDays)),
-    [allDays, rangeDays],
-  );
+  // 直近 N 日のカレンダー固定幅ウィンドウ (allDays は 0 埋め済み・昇順・今日まで)。
+  // データが N 日に満たない場合は前方を 0 で埋める — 2 日分のデータが全幅に
+  // 引き伸ばされる「極端」な見た目を避け、常に N 日ぶんの横軸にする。
+  const days = useMemo(() => {
+    if (rangeDays === 0 || allDays.length === 0) return allDays;
+    if (allDays.length >= rangeDays) return allDays.slice(-rangeDays);
+    const pad: CampaignDailyStat[] = [];
+    const firstMs = new Date(allDays[0].date + "T00:00:00Z").getTime();
+    for (let i = rangeDays - allDays.length; i > 0; i--) {
+      pad.push({
+        date: new Date(firstMs - i * 86400000).toISOString().slice(0, 10),
+        sent: 0,
+        opened: 0,
+        clicked: 0,
+        replied: 0,
+        bounced: 0,
+        unsubscribed: 0,
+      });
+    }
+    return [...pad, ...allDays];
+  }, [allDays, rangeDays]);
 
   const totals = useMemo(() => {
     const t: Record<SeriesKey, number> = { sent: 0, opened: 0, clicked: 0, replied: 0 };
