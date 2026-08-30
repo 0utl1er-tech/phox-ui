@@ -18,7 +18,9 @@ import {
   FiCheck,
   FiChevronLeft,
   FiChevronRight,
+  FiPlus,
   FiSend,
+  FiTrash2,
   FiX,
 } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
@@ -68,6 +70,15 @@ interface CreateResult {
   skippedDuplicate: number;
 }
 
+// Phase 27e: フォローアップ (2 通目以降) の入力ドラフト。stepNo は送信不要 (自動採番)。
+interface FollowupDraft {
+  waitDays: number;
+  subject: string;
+  body: string;
+}
+
+const MAX_FOLLOWUPS = 5;
+
 type WizardStep = 1 | 2 | 3 | 4;
 
 const STEP_TITLES: Record<WizardStep, string> = {
@@ -112,6 +123,8 @@ export default function NewCampaignPage() {
   const subjectRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [activeField, setActiveField] = useState<"subject" | "body">("body");
+  // Phase 27e: フォローアップシーケンス (最大 5 ステップ)
+  const [followups, setFollowups] = useState<FollowupDraft[]>([]);
 
   // --- ④ 確認 (特電法) ---
   const [senderOrg, setSenderOrg] = useState("");
@@ -301,7 +314,39 @@ export default function NewCampaignPage() {
     [selectedMailboxIds, sendStartHour, sendEndHour, dailyCap, minIntervalSec],
   );
 
-  const canProceedStep3 = useMemo(() => name.trim().length > 0, [name]);
+  // Phase 27e: フォローアップの操作ヘルパー
+  const addFollowup = () => {
+    setFollowups((prev) =>
+      prev.length >= MAX_FOLLOWUPS
+        ? prev
+        : [...prev, { waitDays: 3, subject: "", body: "" }],
+    );
+  };
+  const updateFollowup = (index: number, patch: Partial<FollowupDraft>) => {
+    setFollowups((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, ...patch } : f)),
+    );
+  };
+  const removeFollowup = (index: number) => {
+    setFollowups((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const followupsValid = useMemo(
+    () =>
+      followups.every(
+        (f) =>
+          f.body.trim().length > 0 &&
+          Number.isFinite(f.waitDays) &&
+          f.waitDays >= 1 &&
+          f.waitDays <= 60,
+      ),
+    [followups],
+  );
+
+  const canProceedStep3 = useMemo(
+    () => name.trim().length > 0 && followupsValid,
+    [name, followupsValid],
+  );
 
   const canSubmit = useMemo(
     () =>
@@ -349,6 +394,12 @@ export default function NewCampaignPage() {
             },
             trackOpens,
             trackClicks,
+            // Phase 27e: フォローアップ (stepNo は backend が自動採番)
+            followups: followups.map((f) => ({
+              waitDays: f.waitDays,
+              subject: f.subject,
+              body: f.body,
+            })),
           }),
         },
       );
@@ -826,6 +877,114 @@ export default function NewCampaignPage() {
                 </div>
               </div>
 
+              {/* ---------- Phase 27e: フォローアップシーケンス ---------- */}
+              <div className="space-y-3 pt-2 border-t">
+                <div>
+                  <h3 className="text-base font-semibold text-gray-900">
+                    フォローアップ (返信が無かった人への追いメール)
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    前の送信から指定日数たっても返信が無い受信者にだけ、同じスレッドへの
+                    返信として自動送信されます。受信者が返信・配信停止・バウンスした時点で
+                    以降のフォローアップは自動停止します。
+                  </p>
+                </div>
+
+                {followups.map((f, i) => (
+                  <div
+                    key={i}
+                    className="border border-gray-200 rounded-lg p-4 space-y-3 bg-gray-50/50"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                        {i + 2}通目
+                      </span>
+                      <span className="text-sm text-gray-700 flex items-center gap-1.5 flex-wrap">
+                        前の送信から
+                        <Input
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={f.waitDays}
+                          onChange={(e) =>
+                            updateFollowup(i, { waitDays: Number(e.target.value) })
+                          }
+                          aria-label={`${i + 2}通目の待機日数`}
+                          className="w-20 inline-block"
+                        />
+                        日後、返信がなければ送信
+                      </span>
+                      <div className="flex-1" />
+                      <button
+                        type="button"
+                        onClick={() => removeFollowup(i)}
+                        className="p-1.5 hover:bg-red-50 rounded-md transition-colors"
+                        title={`${i + 2}通目を削除`}
+                      >
+                        <FiTrash2 className="w-4 h-4 text-red-500" />
+                      </button>
+                    </div>
+                    {(f.waitDays < 1 || f.waitDays > 60 || !Number.isFinite(f.waitDays)) && (
+                      <p className="text-xs text-red-600">日数は 1〜60 で指定してください</p>
+                    )}
+                    <div className="space-y-1">
+                      <label
+                        className="text-sm font-medium text-gray-700"
+                        htmlFor={`followup-subject-${i}`}
+                      >
+                        件名
+                      </label>
+                      <Input
+                        id={`followup-subject-${i}`}
+                        value={f.subject}
+                        onChange={(e) => updateFollowup(i, { subject: e.target.value })}
+                        placeholder="空欄なら『Re: 1通目の件名』で同じスレッドに返信"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label
+                        className="text-sm font-medium text-gray-700"
+                        htmlFor={`followup-body-${i}`}
+                      >
+                        本文 <span className="text-red-600">*</span>
+                      </label>
+                      <Textarea
+                        id={`followup-body-${i}`}
+                        value={f.body}
+                        onChange={(e) => updateFollowup(i, { body: e.target.value })}
+                        rows={8}
+                        placeholder={"{{customer_name}} 様\n\n先日お送りしたご案内の件、いかがでしょうか。..."}
+                      />
+                      <p className="text-xs text-gray-500">
+                        1通目と同じ差し込みタグ ({"{{customer_name}}"} など) が使えます
+                      </p>
+                    </div>
+                    {f.body && (
+                      <details className="text-sm">
+                        <summary className="text-xs text-gray-600 cursor-pointer select-none hover:text-gray-900">
+                          プレビュー (サンプル値)
+                        </summary>
+                        <div className="mt-2 border rounded-lg bg-white p-3 whitespace-pre-wrap break-words text-gray-800">
+                          {renderPreview(f.body)}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                ))}
+
+                {followups.length < MAX_FOLLOWUPS ? (
+                  <Button type="button" variant="outline" size="sm" onClick={addFollowup}>
+                    <FiPlus className="w-4 h-4 mr-1" />
+                    フォローアップを追加
+                    {followups.length > 0 && ` (${followups.length}/${MAX_FOLLOWUPS})`}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    フォローアップは最大 {MAX_FOLLOWUPS} 通までです
+                  </p>
+                )}
+              </div>
+
               <p className="text-xs text-gray-500">
                 テスト送信は下書き作成後、キャンペーン詳細ページから実行できます。
               </p>
@@ -918,6 +1077,16 @@ export default function NewCampaignPage() {
                 <div className="flex px-4 py-2">
                   <span className="w-40 text-gray-500 flex-shrink-0">件名</span>
                   <span className="text-gray-900 break-words">{subject || "(未入力 — 開始前に必須)"}</span>
+                </div>
+                <div className="flex px-4 py-2">
+                  <span className="w-40 text-gray-500 flex-shrink-0">シーケンス構成</span>
+                  <span className="text-gray-900">
+                    {followups.length === 0
+                      ? "メール 1通のみ (フォローアップなし)"
+                      : `メール ${followups.length + 1}通構成 (1通目${followups
+                          .map((f) => ` + ${f.waitDays}日後`)
+                          .join("")})`}
+                  </span>
                 </div>
               </div>
 
