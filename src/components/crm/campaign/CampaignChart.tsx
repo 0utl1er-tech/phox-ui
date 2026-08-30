@@ -63,11 +63,27 @@ function smoothPath(pts: { x: number; y: number }[]): string {
   return d;
 }
 
-export function CampaignChart({ days }: { days: CampaignDailyStat[] }) {
+// 表示期間プリセット。0 = 全期間。デフォルトは直近 7 日
+// (数日分のデータが全幅に引き伸ばされる「極端」な見た目を避ける)。
+const RANGE_PRESETS = [
+  { label: "7日", value: 7 },
+  { label: "14日", value: 14 },
+  { label: "30日", value: 30 },
+  { label: "全期間", value: 0 },
+] as const;
+
+export function CampaignChart({ days: allDays }: { days: CampaignDailyStat[] }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const [hiddenKeys, setHiddenKeys] = useState<Set<SeriesKey>>(new Set());
+  const [rangeDays, setRangeDays] = useState<number>(7);
   // hover: データ点 index + コンテナ内 px 座標 (ツールチップ配置用)
   const [hover, setHover] = useState<{ index: number; px: number; width: number } | null>(null);
+
+  // 直近 N 日にスライス (allDays は 0 埋め済み・昇順・今日まで)。
+  const days = useMemo(
+    () => (rangeDays === 0 ? allDays : allDays.slice(-rangeDays)),
+    [allDays, rangeDays],
+  );
 
   const totals = useMemo(() => {
     const t: Record<SeriesKey, number> = { sent: 0, opened: 0, clicked: 0, replied: 0 };
@@ -138,8 +154,9 @@ export function CampaignChart({ days }: { days: CampaignDailyStat[] }) {
 
   return (
     <div>
-      {/* 凡例 (クリックでトグル) */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1 mb-3">
+      {/* 凡例 (クリックでトグル) + 表示期間セレクタ */}
+      <div className="flex flex-wrap items-center justify-between gap-y-2 mb-3">
+        <div className="flex flex-wrap gap-x-5 gap-y-1">
         {SERIES.map((s) => {
           const off = hiddenKeys.has(s.key);
           return (
@@ -161,6 +178,25 @@ export function CampaignChart({ days }: { days: CampaignDailyStat[] }) {
             </button>
           );
         })}
+        </div>
+
+        {/* 表示期間 (デフォルト直近7日) */}
+        <div className="flex items-center rounded-lg border bg-gray-50 p-0.5">
+          {RANGE_PRESETS.map((r) => (
+            <button
+              key={r.value}
+              type="button"
+              onClick={() => setRangeDays(r.value)}
+              className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+                rangeDays === r.value
+                  ? "bg-white text-gray-900 font-medium shadow-sm border"
+                  : "text-gray-500 hover:text-gray-800"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div
