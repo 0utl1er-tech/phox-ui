@@ -106,10 +106,15 @@ export interface Suppression {
 }
 
 export function normalizeSchedule(raw: any): CampaignSchedule {
+  // 注意: Connect の proto3 JSON は zero-value フィールドを省略するため、
+  // 「無い」= 0 として扱う必要がある (sendStartHour: 0 は真夜中開始の有効値。
+  // 9 などを当てると窓判定が実際の worker と食い違い「待機中」の誤表示になる)。
+  // sendDays 0 は backend 同様「平日」の意味なので表示側で 31 に読み替える。
+  const days = raw?.send_days ?? raw?.sendDays ?? 0;
   return {
-    sendStartHour: raw?.send_start_hour ?? raw?.sendStartHour ?? 9,
-    sendEndHour: raw?.send_end_hour ?? raw?.sendEndHour ?? 18,
-    sendDays: raw?.send_days ?? raw?.sendDays ?? 31,
+    sendStartHour: raw?.send_start_hour ?? raw?.sendStartHour ?? 0,
+    sendEndHour: raw?.send_end_hour ?? raw?.sendEndHour ?? 24,
+    sendDays: days === 0 ? 31 : days,
     dailyCapPerMailbox: raw?.daily_cap_per_mailbox ?? raw?.dailyCapPerMailbox ?? 100,
     minIntervalSec: raw?.min_interval_sec ?? raw?.minIntervalSec ?? 90,
     warmupEnabled: raw?.warmup_enabled ?? raw?.warmupEnabled ?? false,
