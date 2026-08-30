@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { Button } from "@/components/ui/button";
-import { FiMail, FiSettings } from "react-icons/fi";
+import { FiMail, FiSend, FiSettings } from "react-icons/fi";
 import { NavbarSearchBar } from "./NavbarSearchBar";
 
 export default function Navbar() {
@@ -32,6 +32,11 @@ export default function Navbar() {
             <Button variant="ghost" size="icon" asChild title="メール">
               <Link href="/mails">
                 <FiMail className="w-5 h-5" />
+              </Link>
+            </Button>
+            <Button variant="ghost" size="icon" asChild title="キャンペーン">
+              <Link href="/campaigns">
+                <FiSend className="w-5 h-5" />
               </Link>
             </Button>
             <Button variant="ghost" size="icon" asChild title="ユーザー設定">

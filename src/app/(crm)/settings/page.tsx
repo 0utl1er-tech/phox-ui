@@ -9,6 +9,7 @@ import { useAuthStore } from "@/store/authStore";
 import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-connection-card";
 import ICalFeedCard from "@/components/crm/ical-feed-card";
 import MailboxManagement from "@/components/crm/mailbox-management";
+import SuppressionManagement from "@/components/crm/campaign/suppression-management";
 
 interface User {
   id: string;
@@ -482,6 +483,9 @@ export default function UserSettingsPage() {
 
         {/* Phase 25: 会社共有メールボックス管理 */}
         {authUser && <MailboxManagement />}
+
+        {/* Phase 27a: キャンペーン配信除外リスト */}
+        {authUser && <SuppressionManagement />}
 
         {user?.company && (
           <>
