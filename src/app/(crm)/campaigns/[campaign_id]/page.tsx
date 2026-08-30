@@ -2,9 +2,12 @@
 
 // Phase 27a: キャンペーン詳細ページ。
 // ステータス操作 (開始/一時停止/再開/中止)・統計カード・受信者一覧・
-// テスト送信。running 中は 30 秒ごとに GetCampaign をポーリングする。
+// テスト送信。
 // Phase 27b: 開封→クリック→返信のファネル表示・受信者ごとの計測列・
 // 行クリックでイベント履歴ダイアログ (ListRecipientEvents)。
+// Phase 27d: Instantly 風ダッシュボード — 日次折れ線チャート
+// (GetCampaignTimeseries)・稼働インジケータ (送信窓判定 + lastSentAt)・
+// 完了予定カード (estimatedCompletionAt)。running 中は 15 秒ポーリング。
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,15 +36,24 @@ import {
   RecipientStatusBadge,
 } from "@/components/crm/campaign/StatusBadge";
 import { RecipientEventsDialog } from "@/components/crm/campaign/RecipientEventsDialog";
+import { CampaignChart } from "@/components/crm/campaign/CampaignChart";
 import {
   type Campaign,
+  type CampaignDailyStat,
   type CampaignRecipient,
   type CampaignStats,
   normalizeCampaign,
+  normalizeDailyStat,
   normalizeRecipient,
   parseConnectError,
   formatTimestamp,
   formatSendDays,
+  formatRelativeTime,
+  formatEstimatedCompletion,
+  formatNextSendWindow,
+  fillDailyStats,
+  isInSendWindow,
+  jstDateString,
 } from "@/lib/campaign";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
@@ -71,8 +83,7 @@ function EngagementFunnel({ stats }: { stats: CampaignStats }) {
   const rate = (value: number) =>
     stats.sent > 0 ? `${((value / stats.sent) * 100).toFixed(1)}%` : "-";
   return (
-    <div className="bg-white border rounded-xl p-4">
-      <p className="text-sm font-medium text-gray-700 mb-3">エンゲージメント</p>
+    <div>
       <div className="space-y-2">
         {rows.map((row) => (
           <div key={row.label} className="flex items-center gap-3">
@@ -98,11 +109,84 @@ function EngagementFunnel({ stats }: { stats: CampaignStats }) {
           配信停止: {stats.unsubscribed.toLocaleString()} ({rate(stats.unsubscribed)})
         </span>
       </div>
-      <p className="text-xs text-gray-500 mt-2">
-        ※ 開封率は目安です (画像ブロックなどの影響でブレます)
-      </p>
     </div>
   );
+}
+
+/** Phase 27d: running 中の稼働インジケータ (送信窓の内外で緑パルス/黄)。 */
+function RunningIndicator({
+  campaign,
+  todaySent,
+}: {
+  campaign: Campaign;
+  todaySent: number;
+}) {
+  const inWindow = isInSendWindow(campaign.schedule);
+  const nextWindow = formatNextSendWindow(campaign.schedule);
+  const lastSentRel = formatRelativeTime(campaign.stats.lastSentAt);
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="relative flex h-3 w-3">
+        {inWindow && (
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+        )}
+        <span
+          className={`relative inline-flex rounded-full h-3 w-3 ${
+            inWindow ? "bg-green-500" : "bg-yellow-400"
+          }`}
+        />
+      </span>
+      <span
+        className={`text-sm font-medium ${inWindow ? "text-green-700" : "text-yellow-700"}`}
+      >
+        {inWindow
+          ? "送信中"
+          : `待機中 (送信時間外${nextWindow ? ` — 次は${nextWindow}から` : ""})`}
+      </span>
+      <span className="text-xs text-gray-500">
+        {lastSentRel && <>最終送信: {lastSentRel} ・ </>}
+        本日 {todaySent.toLocaleString()}通送信済み
+      </span>
+    </div>
+  );
+}
+
+/** Phase 27d: 完了予定 / 完了 / 一時停止のカード。表示不要なら null。 */
+function CompletionCard({ campaign }: { campaign: Campaign }) {
+  if (campaign.status === "running" && campaign.estimatedCompletionAt) {
+    const eta = formatEstimatedCompletion(campaign.estimatedCompletionAt);
+    if (!eta) return null;
+    return (
+      <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-4">
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <p className="text-lg font-semibold text-indigo-900">完了予定: {eta}</p>
+          <p className="text-sm text-indigo-700 tabular-nums">
+            残り {campaign.stats.queued.toLocaleString()}通
+          </p>
+        </div>
+        <p className="text-xs text-indigo-500 mt-1">送信間隔・時間帯設定に基づく目安です</p>
+      </div>
+    );
+  }
+  if (campaign.status === "completed" && campaign.completedAt) {
+    return (
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+        <p className="text-lg font-semibold text-blue-900">
+          完了: {formatTimestamp(campaign.completedAt)}
+        </p>
+      </div>
+    );
+  }
+  if (campaign.status === "paused") {
+    return (
+      <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+        <p className="text-sm text-yellow-800">
+          一時停止中 — 再開すると完了予定が再計算されます
+        </p>
+      </div>
+    );
+  }
+  return null;
 }
 
 /** Phase 27b: 受信者テーブルの 開封/クリック/返信 コンパクト表示セル。 */
@@ -123,6 +207,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
   const accessToken = useAuthStore((s) => s.user?.accessToken);
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
+  const [timeseries, setTimeseries] = useState<CampaignDailyStat[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -210,18 +295,33 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
     }
   }, [accessToken, campaignId, callApi]);
 
+  // Phase 27d: 日次時系列 (チャート + 「本日 N通」用)
+  const fetchTimeseries = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const data = await callApi("GetCampaignTimeseries", { campaignId });
+      setTimeseries(
+        (data.days ?? []).map((d: any) => normalizeDailyStat(d)),
+      );
+    } catch (e) {
+      console.error("fetch timeseries failed", e);
+    }
+  }, [accessToken, campaignId, callApi]);
+
   useEffect(() => {
     void fetchCampaign();
-  }, [fetchCampaign]);
+    void fetchTimeseries();
+  }, [fetchCampaign, fetchTimeseries]);
 
-  // running 中は 30 秒ごとにポーリング
+  // running 中は 15 秒ごとにポーリング (稼働インジケータを生きて見せる)
   useEffect(() => {
     if (campaign?.status !== "running") return;
     const timer = setInterval(() => {
       void fetchCampaign();
-    }, 30_000);
+      void fetchTimeseries();
+    }, 15_000);
     return () => clearInterval(timer);
-  }, [campaign?.status, fetchCampaign]);
+  }, [campaign?.status, fetchCampaign, fetchTimeseries]);
 
   const fetchRecipients = useCallback(async () => {
     if (!accessToken) return;
@@ -331,6 +431,13 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
     ];
   }, [stats, openRate, replyRate]);
 
+  // Phase 27d: 欠損日を 0 埋めしたチャート用データと当日 (JST) の送信数
+  const filledDays = useMemo(() => fillDailyStats(timeseries), [timeseries]);
+  const todaySent = useMemo(() => {
+    const today = jstDateString();
+    return timeseries.find((d) => d.date === today)?.sent ?? 0;
+  }, [timeseries]);
+
   // テスト送信のデフォルト mailbox
   useEffect(() => {
     if (campaign && !testMailboxId && campaign.mailboxIds.length > 0) {
@@ -377,6 +484,9 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           </button>
           <h1 className="text-2xl font-bold text-gray-900">{campaign.name}</h1>
           <CampaignStatusBadge status={campaign.status} />
+          {campaign.status === "running" && (
+            <RunningIndicator campaign={campaign} todaySent={todaySent} />
+          )}
           <div className="flex-1" />
           <div className="flex gap-2">
             {campaign.status === "draft" && (
@@ -425,6 +535,9 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           </div>
         )}
 
+        {/* Phase 27d: 完了予定 / 完了 / 一時停止 */}
+        <CompletionCard campaign={campaign} />
+
         {/* 統計カード */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           {statCards.map((card) => (
@@ -440,8 +553,24 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           ))}
         </div>
 
-        {/* Phase 27b: ファネル */}
-        {stats && <EngagementFunnel stats={stats} />}
+        {/* Phase 27d: 日次折れ線チャート (+ 折りたたみのファネル) */}
+        <div className="bg-white border rounded-xl p-4">
+          <p className="text-sm font-medium text-gray-700 mb-3">日次推移</p>
+          <CampaignChart days={filledDays} />
+          <p className="text-xs text-gray-500 mt-2">
+            ※ 開封率は目安です (画像ブロックなどの影響でブレます)
+          </p>
+          {stats && (
+            <details className="mt-3 pt-3 border-t">
+              <summary className="text-sm text-gray-600 cursor-pointer select-none hover:text-gray-900">
+                エンゲージメントファネル (バウンス・配信停止を含む)
+              </summary>
+              <div className="mt-2">
+                <EngagementFunnel stats={stats} />
+              </div>
+            </details>
+          )}
+        </div>
 
         {/* 設定サマリー */}
         <div className="bg-white border rounded-xl p-4 text-sm text-gray-700 flex flex-wrap gap-x-6 gap-y-1">
