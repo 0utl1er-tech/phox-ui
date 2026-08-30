@@ -3,6 +3,8 @@
 // Phase 27a: キャンペーン詳細ページ。
 // ステータス操作 (開始/一時停止/再開/中止)・統計カード・受信者一覧・
 // テスト送信。running 中は 30 秒ごとに GetCampaign をポーリングする。
+// Phase 27b: 開封→クリック→返信のファネル表示・受信者ごとの計測列・
+// 行クリックでイベント履歴ダイアログ (ListRecipientEvents)。
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +20,7 @@ import {
 } from "@/components/ui/table";
 import {
   FiArrowLeft,
+  FiCheck,
   FiMail,
   FiPause,
   FiPlay,
@@ -29,9 +32,11 @@ import {
   CampaignStatusBadge,
   RecipientStatusBadge,
 } from "@/components/crm/campaign/StatusBadge";
+import { RecipientEventsDialog } from "@/components/crm/campaign/RecipientEventsDialog";
 import {
   type Campaign,
   type CampaignRecipient,
+  type CampaignStats,
   normalizeCampaign,
   normalizeRecipient,
   parseConnectError,
@@ -54,6 +59,64 @@ interface CampaignDetailPageProps {
   params: Promise<{ campaign_id: string }>;
 }
 
+/** Phase 27b: 送信→開封→クリック→返信のファネルバー。 */
+function EngagementFunnel({ stats }: { stats: CampaignStats }) {
+  const denominator = Math.max(stats.sent, 1);
+  const rows = [
+    { label: "送信済", value: stats.sent, barClass: "bg-gray-400" },
+    { label: "開封", value: stats.opened, barClass: "bg-blue-500" },
+    { label: "クリック", value: stats.clicked, barClass: "bg-green-500" },
+    { label: "返信", value: stats.replied, barClass: "bg-purple-500" },
+  ];
+  const rate = (value: number) =>
+    stats.sent > 0 ? `${((value / stats.sent) * 100).toFixed(1)}%` : "-";
+  return (
+    <div className="bg-white border rounded-xl p-4">
+      <p className="text-sm font-medium text-gray-700 mb-3">エンゲージメント</p>
+      <div className="space-y-2">
+        {rows.map((row) => (
+          <div key={row.label} className="flex items-center gap-3">
+            <span className="w-16 shrink-0 text-xs text-gray-500">{row.label}</span>
+            <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full ${row.barClass}`}
+                style={{ width: `${Math.min(100, (row.value / denominator) * 100)}%` }}
+              />
+            </div>
+            <span className="w-32 shrink-0 text-right text-sm text-gray-700 tabular-nums">
+              {row.value.toLocaleString()}
+              <span className="text-xs text-gray-400 ml-1">({rate(row.value)})</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 pt-3 border-t text-xs">
+        <span className="text-orange-600">
+          バウンス: {stats.bounced.toLocaleString()} ({rate(stats.bounced)})
+        </span>
+        <span className="text-red-600">
+          配信停止: {stats.unsubscribed.toLocaleString()} ({rate(stats.unsubscribed)})
+        </span>
+      </div>
+      <p className="text-xs text-gray-500 mt-2">
+        ※ 開封率は目安です (画像ブロックなどの影響でブレます)
+      </p>
+    </div>
+  );
+}
+
+/** Phase 27b: 受信者テーブルの 開封/クリック/返信 コンパクト表示セル。 */
+function EngagementMark({ at }: { at?: string }) {
+  if (!at) {
+    return <span className="text-gray-300">-</span>;
+  }
+  return (
+    <span title={formatTimestamp(at)} className="inline-flex">
+      <FiCheck className="w-4 h-4 text-green-600" />
+    </span>
+  );
+}
+
 export default function CampaignDetailPage({ params }: CampaignDetailPageProps) {
   const { campaign_id: campaignId } = use(params);
   const router = useRouter();
@@ -71,6 +134,8 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
   const [statusFilter, setStatusFilter] = useState("");
   const [isLoadingRecipients, setIsLoadingRecipients] = useState(false);
   const [isRequeueing, setIsRequeueing] = useState(false);
+  // イベント履歴ダイアログの対象受信者 (null = 閉)
+  const [eventRecipient, setEventRecipient] = useState<CampaignRecipient | null>(null);
 
   // テスト送信
   const [testTo, setTestTo] = useState("");
@@ -361,24 +426,22 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
         )}
 
         {/* 統計カード */}
-        <div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-            {statCards.map((card) => (
-              <div key={card.label} className="bg-white border rounded-xl p-4">
-                <p className="text-xs text-gray-500">{card.label}</p>
-                <p className="text-xl font-bold text-gray-900 tabular-nums mt-1">
-                  {card.value}
-                  {card.sub && (
-                    <span className="text-sm font-medium text-gray-500 ml-1">({card.sub})</span>
-                  )}
-                </p>
-              </div>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            ※ 開封率は目安です (画像ブロックなどの影響でブレます)
-          </p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {statCards.map((card) => (
+            <div key={card.label} className="bg-white border rounded-xl p-4">
+              <p className="text-xs text-gray-500">{card.label}</p>
+              <p className="text-xl font-bold text-gray-900 tabular-nums mt-1">
+                {card.value}
+                {card.sub && (
+                  <span className="text-sm font-medium text-gray-500 ml-1">({card.sub})</span>
+                )}
+              </p>
+            </div>
+          ))}
         </div>
+
+        {/* Phase 27b: ファネル */}
+        {stats && <EngagementFunnel stats={stats} />}
 
         {/* 設定サマリー */}
         <div className="bg-white border rounded-xl p-4 text-sm text-gray-700 flex flex-wrap gap-x-6 gap-y-1">
@@ -487,19 +550,27 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">メール</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">ステータス</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">送信日時</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider text-center">開封</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider text-center">クリック</TableHead>
+                  <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider text-center">返信</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">エラー</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoadingRecipients ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                       読み込み中...
                     </TableCell>
                   </TableRow>
                 ) : recipients.length > 0 ? (
                   recipients.map((r) => (
-                    <TableRow key={r.id} className="hover:bg-gray-50">
+                    <TableRow
+                      key={r.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => setEventRecipient(r)}
+                      title="クリックでイベント履歴を表示"
+                    >
                       <TableCell>
                         <div className="font-medium text-gray-900">{r.customerName || "(名前なし)"}</div>
                         {r.customerCorporation && (
@@ -513,6 +584,15 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                       <TableCell className="text-sm text-gray-500">
                         {formatTimestamp(r.sentAt)}
                       </TableCell>
+                      <TableCell className="text-center">
+                        <EngagementMark at={r.firstOpenedAt} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <EngagementMark at={r.firstClickedAt} />
+                      </TableCell>
+                      <TableCell className="text-center">
+                        <EngagementMark at={r.repliedAt} />
+                      </TableCell>
                       <TableCell className="text-sm text-red-600 max-w-xs truncate" title={r.error}>
                         {r.error || "-"}
                       </TableCell>
@@ -520,7 +600,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
                       該当する受信者がいません
                     </TableCell>
                   </TableRow>
@@ -561,6 +641,13 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           )}
         </div>
       </div>
+
+      {/* Phase 27b: 受信者イベント履歴ダイアログ */}
+      <RecipientEventsDialog
+        recipient={eventRecipient}
+        accessToken={accessToken}
+        onClose={() => setEventRecipient(null)}
+      />
     </div>
   );
 }

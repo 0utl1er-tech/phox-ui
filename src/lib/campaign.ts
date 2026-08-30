@@ -72,6 +72,14 @@ export interface CampaignRecipient {
   unsubscribedAt?: string;
 }
 
+export interface CampaignRecipientEvent {
+  id: string;
+  kind: string; // open|click|unsubscribe|reply|bounce
+  url: string;
+  userAgent: string;
+  createdAt: string;
+}
+
 export interface Suppression {
   id: string;
   email: string;
@@ -151,6 +159,16 @@ export function normalizeRecipient(raw: any): CampaignRecipient {
     repliedAt: raw?.replied_at ?? raw?.repliedAt ?? undefined,
     bouncedAt: raw?.bounced_at ?? raw?.bouncedAt ?? undefined,
     unsubscribedAt: raw?.unsubscribed_at ?? raw?.unsubscribedAt ?? undefined,
+  };
+}
+
+export function normalizeCampaignEvent(raw: any): CampaignRecipientEvent {
+  return {
+    id: raw?.id ?? "",
+    kind: raw?.kind ?? "",
+    url: raw?.url ?? "",
+    userAgent: raw?.user_agent ?? raw?.userAgent ?? "",
+    createdAt: raw?.created_at ?? raw?.createdAt ?? "",
   };
 }
 
