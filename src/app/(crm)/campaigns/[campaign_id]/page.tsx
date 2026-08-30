@@ -162,6 +162,8 @@ function CompletionCard({ campaign }: { campaign: Campaign }) {
           <p className="text-lg font-semibold text-indigo-900">完了予定: {eta}</p>
           <p className="text-sm text-indigo-700 tabular-nums">
             残り {campaign.stats.queued.toLocaleString()}通
+            {campaign.stats.waitingFollowup > 0 &&
+              ` + 追客待ち ${campaign.stats.waitingFollowup.toLocaleString()}件`}
           </p>
         </div>
         <p className="text-xs text-indigo-500 mt-1">送信間隔・時間帯設定に基づく目安です</p>
@@ -419,17 +421,29 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
   const openRate = stats && stats.sent > 0 ? ((stats.opened / stats.sent) * 100).toFixed(1) : null;
   const replyRate = stats && stats.sent > 0 ? ((stats.replied / stats.sent) * 100).toFixed(1) : null;
 
+  // Phase 27e: フォローアップ設定の有無 (0 件なら従来と同一表示)
+  const hasFollowups = (campaign?.followups.length ?? 0) > 0;
+
   const statCards = useMemo(() => {
     if (!stats) return [];
-    return [
-      { label: "送信", value: `${stats.sent.toLocaleString()} / ${stats.total.toLocaleString()}` },
+    const cards: { label: string; value: string; sub?: string }[] = [
+      // Phase 27e: sent = 1通以上送った人数 (接触済み)
+      { label: "接触済み", value: `${stats.sent.toLocaleString()} / ${stats.total.toLocaleString()}` },
       { label: "開封", value: stats.opened.toLocaleString(), sub: openRate ? `${openRate}%` : undefined },
       { label: "クリック", value: stats.clicked.toLocaleString() },
       { label: "返信", value: stats.replied.toLocaleString(), sub: replyRate ? `${replyRate}%` : undefined },
       { label: "バウンス", value: stats.bounced.toLocaleString() },
       { label: "配信停止", value: stats.unsubscribed.toLocaleString() },
     ];
-  }, [stats, openRate, replyRate]);
+    if (hasFollowups) {
+      // 接触済みの隣 (2 番目) に追客待ちを差し込む
+      cards.splice(1, 0, {
+        label: "追客待ち",
+        value: stats.waitingFollowup.toLocaleString(),
+      });
+    }
+    return cards;
+  }, [stats, openRate, replyRate, hasFollowups]);
 
   // Phase 27d: 欠損日を 0 埋めしたチャート用データと当日 (JST) の送信数
   const filledDays = useMemo(() => fillDailyStats(timeseries), [timeseries]);
@@ -539,7 +553,11 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
         <CompletionCard campaign={campaign} />
 
         {/* 統計カード */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div
+          className={`grid grid-cols-2 sm:grid-cols-3 gap-3 ${
+            statCards.length > 6 ? "lg:grid-cols-7" : "lg:grid-cols-6"
+          }`}
+        >
           {statCards.map((card) => (
             <div key={card.label} className="bg-white border rounded-xl p-4">
               <p className="text-xs text-gray-500">{card.label}</p>
@@ -574,6 +592,28 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
 
         {/* 設定サマリー */}
         <div className="bg-white border rounded-xl p-4 text-sm text-gray-700 flex flex-wrap gap-x-6 gap-y-1">
+          {hasFollowups && (
+            <span className="w-full flex flex-wrap items-center gap-1.5 mb-1">
+              <span className="text-gray-500">シーケンス:</span>
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
+                1通目
+              </span>
+              {campaign.followups.map((f) => (
+                <span key={f.stepNo} className="flex items-center gap-1.5">
+                  <span className="text-gray-400">→</span>
+                  <span
+                    className="px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 text-xs font-medium"
+                    title={`${f.stepNo}通目: 前の送信から${f.waitDays}日後、返信がなければ送信`}
+                  >
+                    +{f.waitDays}日
+                  </span>
+                </span>
+              ))}
+              <span className="text-xs text-gray-400 ml-1">
+                (返信・配信停止・バウンスで自動停止)
+              </span>
+            </span>
+          )}
           <span>
             送信時間帯: {campaign.schedule.sendStartHour}時〜{campaign.schedule.sendEndHour}時 / {formatSendDays(campaign.schedule.sendDays)}
           </span>
@@ -678,6 +718,9 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">顧客名</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">メール</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">ステータス</TableHead>
+                  {hasFollowups && (
+                    <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">ステップ</TableHead>
+                  )}
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">送信日時</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider text-center">開封</TableHead>
                   <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider text-center">クリック</TableHead>
@@ -688,7 +731,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
               <TableBody>
                 {isLoadingRecipients ? (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={hasFollowups ? 9 : 8} className="text-center py-8 text-gray-500">
                       読み込み中...
                     </TableCell>
                   </TableRow>
@@ -710,6 +753,22 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                       <TableCell>
                         <RecipientStatusBadge status={r.status} />
                       </TableCell>
+                      {hasFollowups && (
+                        <TableCell>
+                          {r.sentAt ? (
+                            <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium whitespace-nowrap">
+                              {r.currentStep}通目
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">-</span>
+                          )}
+                          {r.status === "queued" && r.nextStepAt && (
+                            <p className="text-xs text-gray-500 mt-1 whitespace-nowrap">
+                              {formatTimestamp(r.nextStepAt)} に{r.currentStep + 1}通目
+                            </p>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className="text-sm text-gray-500">
                         {formatTimestamp(r.sentAt)}
                       </TableCell>
@@ -729,7 +788,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                   ))
                 ) : (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                    <TableCell colSpan={hasFollowups ? 9 : 8} className="text-center py-8 text-gray-500">
                       該当する受信者がいません
                     </TableCell>
                   </TableRow>

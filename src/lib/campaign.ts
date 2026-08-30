@@ -17,6 +17,19 @@ export interface CampaignSender {
   senderContact: string;
 }
 
+/**
+ * Phase 27e: フォローアップステップ (2 通目以降)。前ステップ送信後、返信が
+ * 無ければ waitDays 日後に同一スレッドへの返信として送られる。
+ * subject 空 = "Re: <1通目の件名>"。
+ */
+export interface CampaignFollowup {
+  /** 2.. (1 通目は Campaign.subject/body)。 */
+  stepNo: number;
+  waitDays: number;
+  subject: string;
+  body: string;
+}
+
 export interface CampaignStats {
   total: number;
   queued: number;
@@ -30,6 +43,8 @@ export interface CampaignStats {
   unsubscribed: number;
   /** Phase 27d: 最後に送信した時刻 (稼働インジケータ用)。 */
   lastSentAt?: string;
+  /** Phase 27e: フォローアップ待ち (1 通以上送信済みで次ステップの時期待ち)。 */
+  waitingFollowup: number;
 }
 
 export type CampaignStatus =
@@ -58,6 +73,8 @@ export interface Campaign {
   updatedAt: string;
   /** Phase 27d: running 中のみ。ペーシング設定から算出した完了予定 (目安)。 */
   estimatedCompletionAt?: string;
+  /** Phase 27e: フォローアップステップ (2 通目以降)。空 = 単発キャンペーン。 */
+  followups: CampaignFollowup[];
 }
 
 /** Phase 27d: GetCampaignTimeseries の日次集計 1 日分。 */
@@ -86,6 +103,10 @@ export interface CampaignRecipient {
   repliedAt?: string;
   bouncedAt?: string;
   unsubscribedAt?: string;
+  /** Phase 27e: 現在のステップ (1 = 1通目)。 */
+  currentStep: number;
+  /** Phase 27e: 次ステップの送信予定時刻 (フォローアップ待ちの queued 行のみ)。 */
+  nextStepAt?: string;
 }
 
 export interface CampaignRecipientEvent {
@@ -129,6 +150,23 @@ export function normalizeSender(raw: any): CampaignSender {
   };
 }
 
+/**
+ * Phase 27e: フォローアップの正規化。proto3 JSON の zero-value 省略で
+ * step_no/wait_days が欠損し得るため、step_no は配列位置 (index+2)、
+ * wait_days は 3 をデフォルト補完する (wait_days は backend 検証で 1-60 のため
+ * 0 は実際には来ないが防御的に)。
+ */
+export function normalizeFollowup(raw: any, index = 0): CampaignFollowup {
+  const stepNo = Number(raw?.step_no ?? raw?.stepNo ?? 0);
+  const waitDays = Number(raw?.wait_days ?? raw?.waitDays ?? 0);
+  return {
+    stepNo: stepNo > 0 ? stepNo : index + 2,
+    waitDays: waitDays > 0 ? waitDays : 3,
+    subject: raw?.subject ?? "",
+    body: raw?.body ?? "",
+  };
+}
+
 export function normalizeStats(raw: any): CampaignStats {
   return {
     total: Number(raw?.total ?? 0),
@@ -142,6 +180,7 @@ export function normalizeStats(raw: any): CampaignStats {
     bounced: Number(raw?.bounced ?? 0),
     unsubscribed: Number(raw?.unsubscribed ?? 0),
     lastSentAt: raw?.last_sent_at ?? raw?.lastSentAt ?? undefined,
+    waitingFollowup: Number(raw?.waiting_followup ?? raw?.waitingFollowup ?? 0),
   };
 }
 
@@ -177,6 +216,9 @@ export function normalizeCampaign(raw: any): Campaign {
     updatedAt: raw?.updated_at ?? raw?.updatedAt ?? "",
     estimatedCompletionAt:
       raw?.estimated_completion_at ?? raw?.estimatedCompletionAt ?? undefined,
+    followups: ((raw?.followups ?? []) as any[]).map((f, i) =>
+      normalizeFollowup(f, i),
+    ),
   };
 }
 
@@ -195,6 +237,9 @@ export function normalizeRecipient(raw: any): CampaignRecipient {
     repliedAt: raw?.replied_at ?? raw?.repliedAt ?? undefined,
     bouncedAt: raw?.bounced_at ?? raw?.bouncedAt ?? undefined,
     unsubscribedAt: raw?.unsubscribed_at ?? raw?.unsubscribedAt ?? undefined,
+    // proto3 zero-value 省略: current_step 欠損 = 0 だが表示上は 1通目扱い。
+    currentStep: Number(raw?.current_step ?? raw?.currentStep ?? 0) || 1,
+    nextStepAt: raw?.next_step_at ?? raw?.nextStepAt ?? undefined,
   };
 }
 
