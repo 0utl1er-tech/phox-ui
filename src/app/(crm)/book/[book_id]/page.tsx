@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, use } from "react";
+import { useEffect, useMemo, useRef, useState, useCallback, use } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -16,7 +16,9 @@ import {
   FiUserPlus,
 } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
+import { useCampaignSelectionStore } from "@/store/campaign-selection";
 import BookNavigationBar from "@/components/crm/BookNavigationBar";
+import FloatingSelectionBar from "@/components/crm/campaign/FloatingSelectionBar";
 
 interface Customer {
   id: string;
@@ -84,6 +86,39 @@ export default function CustomerListPage({ params }: CustomerListPageProps) {
   const [isDeletingCustomer, setIsDeletingCustomer] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const user = useAuthStore((state) => state.user);
+
+  // Phase 27a: キャンペーン受信者の一括選択 (ページングをまたいで保持)
+  const campaignSelected = useCampaignSelectionStore((s) => s.selected);
+  const campaignToggle = useCampaignSelectionStore((s) => s.toggle);
+  const campaignSelectMany = useCampaignSelectionStore((s) => s.selectMany);
+  const campaignDeselectMany = useCampaignSelectionStore((s) => s.deselectMany);
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  // メール未登録の顧客は backend でスキップされるため選択不可にする
+  const selectableCustomers = useMemo(
+    () => customers.filter((c) => c.mail),
+    [customers],
+  );
+  const allPageSelected =
+    selectableCustomers.length > 0 &&
+    selectableCustomers.every((c) => campaignSelected.has(c.id));
+  const somePageSelected = selectableCustomers.some((c) => campaignSelected.has(c.id));
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = somePageSelected && !allPageSelected;
+    }
+  }, [somePageSelected, allPageSelected]);
+
+  const handleTogglePageSelection = () => {
+    if (allPageSelected) {
+      campaignDeselectMany(selectableCustomers.map((c) => c.id));
+    } else {
+      campaignSelectMany(
+        selectableCustomers.map((c) => [c.id, { name: c.name, email: c.mail }]),
+      );
+    }
+  };
 
   useEffect(() => {
     const fetchCustomers = async () => {
@@ -203,6 +238,19 @@ export default function CustomerListPage({ params }: CustomerListPageProps) {
               <Table>
                 <TableHeader>
                   <TableRow className="bg-gray-50 border-b">
+                    <TableHead className="w-10">
+                      <input
+                        ref={headerCheckboxRef}
+                        type="checkbox"
+                        role="checkbox"
+                        aria-label="このページの顧客を選択"
+                        title="このページの顧客を選択 (メール登録済みのみ)"
+                        checked={allPageSelected}
+                        onChange={handleTogglePageSelection}
+                        disabled={selectableCustomers.length === 0}
+                        className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40"
+                      />
+                    </TableHead>
                     <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">顧客名</TableHead>
                     <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">法人名</TableHead>
                     <TableHead className="text-gray-500 font-medium text-xs uppercase tracking-wider">カテゴリ</TableHead>
@@ -224,6 +272,23 @@ export default function CustomerListPage({ params }: CustomerListPageProps) {
                         onClick={() => setSelectedIdx(idx)}
                         onDoubleClick={() => router.push(`/book/${bookId}/customer/${customer.id}`)}
                       >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            role="checkbox"
+                            aria-label={`${customer.name || "(名前なし)"} を選択`}
+                            checked={campaignSelected.has(customer.id)}
+                            onChange={() =>
+                              campaignToggle(customer.id, {
+                                name: customer.name,
+                                email: customer.mail,
+                              })
+                            }
+                            disabled={!customer.mail}
+                            title={customer.mail ? undefined : "メールアドレス未登録"}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                          />
+                        </TableCell>
                         <TableCell>
                           <Link href={`/book/${bookId}/customer/${customer.id}`} className="block hover:bg-gray-50 p-2 -m-2 rounded">
                             <div className="flex items-center gap-2">
@@ -275,7 +340,7 @@ export default function CustomerListPage({ params }: CustomerListPageProps) {
                     ))
                   ) : (
                     <TableRow>
-                      <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                      <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                         顧客データがありません
                       </TableCell>
                     </TableRow>
@@ -316,6 +381,9 @@ export default function CustomerListPage({ params }: CustomerListPageProps) {
             )}
         </div>
       </div>
+
+      {/* Phase 27a: 選択があるときのフローティングアクションバー */}
+      <FloatingSelectionBar />
 
       <CreateCustomerDialog
         bookId={bookId}

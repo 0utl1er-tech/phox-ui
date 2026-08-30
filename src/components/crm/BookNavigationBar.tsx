@@ -9,6 +9,7 @@ import {
   FiActivity,
   FiBarChart2,
   FiBook,
+  FiSend,
   FiSettings,
 } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
@@ -170,6 +171,16 @@ export default function BookNavigationBar({ bookId, customerId }: BookNavigation
                 title="集計"
               >
                 <FiBarChart2 className="w-4 h-4 text-gray-500" />
+              </button>
+
+              {/* キャンペーン (Phase 27a) */}
+              <button
+                type="button"
+                onClick={() => router.push("/campaigns")}
+                className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors"
+                title="キャンペーン"
+              >
+                <FiSend className="w-4 h-4 text-gray-500" />
               </button>
 
               {/* Book 設定 */}

@@ -4,7 +4,7 @@
 // backend の SearchCustomers RPC (ES バックエンド) を叩く。未認証・ES 未起動の
 // ときは空リストで degraded モード表示する。
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,8 @@ import Link from "next/link";
 import { FiUser, FiPhone } from "react-icons/fi";
 import SearchSidebar, { SearchFilter } from "@/components/crm/SearchSidebar";
 import { useAuthStore } from "@/store/authStore";
+import { useCampaignSelectionStore } from "@/store/campaign-selection";
+import FloatingSelectionBar from "@/components/crm/campaign/FloatingSelectionBar";
 
 interface SearchHit {
   customerId: string;
@@ -54,6 +56,35 @@ export default function CustomerListPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<SearchFilter>({ query: "", prefecture: "" });
+
+  // Phase 27a: キャンペーン受信者の一括選択。
+  // 検索結果にはメールアドレスが含まれないため email は空で登録する
+  // (メール未登録の顧客はキャンペーン作成時に backend がスキップする)。
+  const campaignSelected = useCampaignSelectionStore((s) => s.selected);
+  const campaignToggle = useCampaignSelectionStore((s) => s.toggle);
+  const campaignSelectMany = useCampaignSelectionStore((s) => s.selectMany);
+  const campaignDeselectMany = useCampaignSelectionStore((s) => s.deselectMany);
+  const headerCheckboxRef = useRef<HTMLInputElement>(null);
+
+  const allPageSelected =
+    hits.length > 0 && hits.every((h) => campaignSelected.has(h.customerId));
+  const somePageSelected = hits.some((h) => campaignSelected.has(h.customerId));
+
+  useEffect(() => {
+    if (headerCheckboxRef.current) {
+      headerCheckboxRef.current.indeterminate = somePageSelected && !allPageSelected;
+    }
+  }, [somePageSelected, allPageSelected]);
+
+  const handleTogglePageSelection = () => {
+    if (allPageSelected) {
+      campaignDeselectMany(hits.map((h) => h.customerId));
+    } else {
+      campaignSelectMany(
+        hits.map((h) => [h.customerId, { name: h.name, email: "" }]),
+      );
+    }
+  };
 
   const search = useCallback(
     async (f: SearchFilter) => {
@@ -142,6 +173,18 @@ export default function CustomerListPage() {
                   <Table>
                     <TableHeader>
                       <TableRow className="bg-gradient-to-r from-blue-800 to-blue-900 text-white">
+                        <TableHead className="w-10">
+                          <input
+                            ref={headerCheckboxRef}
+                            type="checkbox"
+                            role="checkbox"
+                            aria-label="表示中の顧客をすべて選択"
+                            title="表示中の顧客をすべて選択"
+                            checked={allPageSelected}
+                            onChange={handleTogglePageSelection}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                        </TableHead>
                         <TableHead className="text-white font-medium">顧客名</TableHead>
                         <TableHead className="text-white font-medium">会社名</TableHead>
                         <TableHead className="text-white font-medium">都道府県</TableHead>
@@ -152,6 +195,21 @@ export default function CustomerListPage() {
                     <TableBody>
                       {hits.map((hit) => (
                         <TableRow key={hit.customerId} className="hover:bg-gray-50">
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              role="checkbox"
+                              aria-label={`${hit.name || "(名前なし)"} を選択`}
+                              checked={campaignSelected.has(hit.customerId)}
+                              onChange={() =>
+                                campaignToggle(hit.customerId, {
+                                  name: hit.name,
+                                  email: "",
+                                })
+                              }
+                              className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                            />
+                          </TableCell>
                           <TableCell>
                             <Link
                               href={`/book/${hit.bookId}/customer/${hit.customerId}`}
@@ -198,6 +256,9 @@ export default function CustomerListPage() {
           </Card>
         </div>
       </div>
+
+      {/* Phase 27a: 選択があるときのフローティングアクションバー */}
+      <FloatingSelectionBar />
     </div>
   );
 }
