@@ -81,6 +81,11 @@ export function PhoneInput({
 
   const user = useAuthStore((state) => state.user);
 
+  // 発信フローの多重発火ガード。zoomphonecall: フォールバックは Zoom アプリが
+  // 無いと無反応なため連打されやすく、クリックの度にコール活動が記録される
+  // 事故があった (2026-08-10 に 1 通話 8 記録)。実行中 + 4 秒間は無視する。
+  const callGuardRef = useRef(0);
+
   // Phase 21: Zoom Phone API 経由で発信 + Activity 記録。
   // Zoom API が未設定 (dev/MailHog 環境) なら従来の zoomphonecall: URL scheme にフォールバック。
   const handlePhoneClick = async (e: React.MouseEvent, phone: string) => {
@@ -88,6 +93,9 @@ export function PhoneInput({
     e.stopPropagation();
 
     if (!user || !phone) return;
+    const now = Date.now();
+    if (now - callGuardRef.current < 4000) return; // 連打・並列実行を無視
+    callGuardRef.current = now;
 
     const token = user.accessToken;
     const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
@@ -248,6 +256,8 @@ interface PhoneLinkProps {
 
 export function PhoneLink({ phone, className, customerId, bookId, onCallCreated }: PhoneLinkProps) {
   const user = useAuthStore((state) => state.user);
+  // PhoneInput と同じ多重発火ガード (連打で通話記録が増殖する事故対策)。
+  const callGuardRef = useRef(0);
 
   if (!phone) {
     return <span className="text-gray-400">-</span>;
@@ -262,6 +272,9 @@ export function PhoneLink({ phone, className, customerId, bookId, onCallCreated 
     e.preventDefault();
     e.stopPropagation();
     if (!user || !phone) return;
+    const now = Date.now();
+    if (now - callGuardRef.current < 4000) return; // 連打・並列実行を無視
+    callGuardRef.current = now;
 
     const token = user.accessToken;
     const apiUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8082';
