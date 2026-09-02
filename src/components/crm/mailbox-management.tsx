@@ -18,7 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuthStore } from "@/store/authStore";
-import { FiMail, FiPlus, FiTrash2, FiUsers, FiChevronDown, FiChevronRight } from "react-icons/fi";
+import { FiMail, FiPlus, FiTrash2, FiUsers, FiChevronDown, FiChevronRight, FiActivity } from "react-icons/fi";
+import { MailboxHealthCard } from "@/components/crm/campaign/MailboxHealthCard";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
 
@@ -69,6 +70,10 @@ export default function MailboxManagement() {
   const [members, setMembers] = useState<MailboxUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
   const [selectedRole, setSelectedRole] = useState("ROLE_EDITOR");
+
+  // Phase 27f: 健全性チェックを開いているメールボックス (null = 閉)。
+  // DNS を引くので開いただけでは走らせず、カード内のボタン操作でのみ実行する。
+  const [healthOpen, setHealthOpen] = useState<string | null>(null);
 
   const post = useCallback(
     async (path: string, body: object) => {
@@ -149,6 +154,7 @@ export default function MailboxManagement() {
     try {
       await post("/mailbox.v1.MailboxService/DeleteMailbox", { id });
       if (expanded === id) setExpanded(null);
+      if (healthOpen === id) setHealthOpen(null);
       await fetchMailboxes();
     } catch (e) {
       setError(e instanceof Error ? e.message : "削除に失敗しました");
@@ -276,12 +282,28 @@ export default function MailboxManagement() {
                   </div>
                   <Badge className={roleBadge[m.role] ?? ""}>{roleLabels[m.role] ?? m.role}</Badge>
                   {!m.active && <Badge className="bg-gray-100 text-gray-500">無効</Badge>}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setHealthOpen((cur) => (cur === m.id ? null : m.id))}
+                    aria-label="健全性"
+                    title="送信ドメインの健全性を確認"
+                  >
+                    <FiActivity className="w-4 h-4 mr-1" />
+                    健全性
+                  </Button>
                   {m.role === "ROLE_OWNER" && (
                     <Button variant="ghost" size="sm" onClick={() => handleDelete(m.id)} aria-label="削除">
                       <FiTrash2 className="w-4 h-4 text-red-500" />
                     </Button>
                   )}
                 </div>
+
+                {healthOpen === m.id && (
+                  <div className="border-t px-3 py-3 bg-gray-50/50">
+                    <MailboxHealthCard mailboxId={m.id} />
+                  </div>
+                )}
 
                 {expanded === m.id && (
                   <div className="border-t px-3 py-3 bg-gray-50/50 space-y-3">

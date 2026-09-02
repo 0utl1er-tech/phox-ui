@@ -22,6 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  FiAlertTriangle,
   FiArrowLeft,
   FiCheck,
   FiMail,
@@ -71,8 +72,25 @@ interface CampaignDetailPageProps {
   params: Promise<{ campaign_id: string }>;
 }
 
+/**
+ * Phase 27f: バウンス率の色分け。緑 ≤2% / 琥珀 2-5% / 赤 >5%。
+ * しきい値を超えると backend がキャンペーンを自動停止するので、
+ * 「まだ平気か」を一目で分かるようにする。
+ */
+function bounceRateClass(rate: number): string {
+  if (rate > 5) return "text-red-600";
+  if (rate > 2) return "text-amber-600";
+  return "text-green-600";
+}
+
 /** Phase 27b: 送信→開封→クリック→返信のファネルバー。 */
-function EngagementFunnel({ stats }: { stats: CampaignStats }) {
+function EngagementFunnel({
+  stats,
+  bouncePauseThreshold,
+}: {
+  stats: CampaignStats;
+  bouncePauseThreshold: number;
+}) {
   const denominator = Math.max(stats.sent, 1);
   const rows = [
     { label: "送信済", value: stats.sent, barClass: "bg-gray-400" },
@@ -82,6 +100,7 @@ function EngagementFunnel({ stats }: { stats: CampaignStats }) {
   ];
   const rate = (value: number) =>
     stats.sent > 0 ? `${((value / stats.sent) * 100).toFixed(1)}%` : "-";
+  const bounceRate = stats.sent > 0 ? (stats.bounced / stats.sent) * 100 : 0;
   return (
     <div>
       <div className="space-y-2">
@@ -101,13 +120,27 @@ function EngagementFunnel({ stats }: { stats: CampaignStats }) {
           </div>
         ))}
       </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 mt-3 pt-3 border-t text-xs">
-        <span className="text-orange-600">
-          バウンス: {stats.bounced.toLocaleString()} ({rate(stats.bounced)})
-        </span>
-        <span className="text-red-600">
-          配信停止: {stats.unsubscribed.toLocaleString()} ({rate(stats.unsubscribed)})
-        </span>
+      <div className="mt-3 pt-3 border-t">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs">
+          {/* Phase 27f: バウンスは件数より率が効くので率を主役にして色で警告する */}
+          <span className="text-gray-600">
+            バウンス率:{" "}
+            <span className={`font-semibold ${bounceRateClass(bounceRate)}`}>
+              {stats.sent > 0 ? `${bounceRate.toFixed(1)}%` : "-"}
+            </span>
+            <span className="text-gray-400 ml-1">
+              ({stats.bounced.toLocaleString()} / {stats.sent.toLocaleString()} 通)
+            </span>
+          </span>
+          <span className="text-red-600">
+            配信停止: {stats.unsubscribed.toLocaleString()} ({rate(stats.unsubscribed)})
+          </span>
+        </div>
+        <p className="text-xs text-gray-500 mt-1.5">
+          {bouncePauseThreshold > 0
+            ? `${bouncePauseThreshold}% を超えると自動停止します`
+            : "バウンス率による自動停止は無効です"}
+        </p>
       </div>
     </div>
   );
@@ -179,7 +212,8 @@ function CompletionCard({ campaign }: { campaign: Campaign }) {
       </div>
     );
   }
-  if (campaign.status === "paused") {
+  // Phase 27f: 自動停止のときは HealthPauseBanner が理由を出すので重複させない。
+  if (campaign.status === "paused" && !campaign.healthPausedReason) {
     return (
       <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
         <p className="text-sm text-yellow-800">
@@ -189,6 +223,30 @@ function CompletionCard({ campaign }: { campaign: Campaign }) {
     );
   }
   return null;
+}
+
+/**
+ * Phase 27f: バウンス率のサーキットブレーカーが働いて自動停止した場合の警告バナー。
+ * 手動の一時停止 (理由なし) では何も出さない。
+ */
+function HealthPauseBanner({ campaign }: { campaign: Campaign }) {
+  if (campaign.status !== "paused" || !campaign.healthPausedReason) return null;
+  return (
+    <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-4">
+      <div className="flex items-start gap-3">
+        <FiAlertTriangle className="w-6 h-6 text-amber-600 shrink-0 mt-0.5" />
+        <div className="min-w-0">
+          <p className="text-base font-bold text-amber-900">
+            健全性チェックにより自動停止しました
+          </p>
+          <p className="text-sm text-amber-800 mt-1">{campaign.healthPausedReason}</p>
+          <p className="text-sm font-medium text-amber-900 mt-2">
+            原因を確認してから再開してください
+          </p>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 /** Phase 27b: 受信者テーブルの 開封/クリック/返信 コンパクト表示セル。 */
@@ -420,19 +478,32 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
   const stats = campaign?.stats;
   const openRate = stats && stats.sent > 0 ? ((stats.opened / stats.sent) * 100).toFixed(1) : null;
   const replyRate = stats && stats.sent > 0 ? ((stats.replied / stats.sent) * 100).toFixed(1) : null;
+  const bounceRate =
+    stats && stats.sent > 0 ? ((stats.bounced / stats.sent) * 100).toFixed(1) : null;
 
   // Phase 27e: フォローアップ設定の有無 (0 件なら従来と同一表示)
   const hasFollowups = (campaign?.followups.length ?? 0) > 0;
 
   const statCards = useMemo(() => {
     if (!stats) return [];
-    const cards: { label: string; value: string; sub?: string }[] = [
+    const cards: {
+      label: string;
+      value: string;
+      sub?: string;
+      subClass?: string;
+    }[] = [
       // Phase 27e: sent = 1通以上送った人数 (接触済み)
       { label: "接触済み", value: `${stats.sent.toLocaleString()} / ${stats.total.toLocaleString()}` },
       { label: "開封", value: stats.opened.toLocaleString(), sub: openRate ? `${openRate}%` : undefined },
       { label: "クリック", value: stats.clicked.toLocaleString() },
       { label: "返信", value: stats.replied.toLocaleString(), sub: replyRate ? `${replyRate}%` : undefined },
-      { label: "バウンス", value: stats.bounced.toLocaleString() },
+      // Phase 27f: バウンスは件数だけでなく率を出す (率でしきい値判定されるため)
+      {
+        label: "バウンス",
+        value: stats.bounced.toLocaleString(),
+        sub: bounceRate !== null ? `${bounceRate}%` : undefined,
+        subClass: bounceRate !== null ? bounceRateClass(Number(bounceRate)) : undefined,
+      },
       { label: "配信停止", value: stats.unsubscribed.toLocaleString() },
     ];
     if (hasFollowups) {
@@ -443,7 +514,7 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
       });
     }
     return cards;
-  }, [stats, openRate, replyRate, hasFollowups]);
+  }, [stats, openRate, replyRate, bounceRate, hasFollowups]);
 
   // Phase 27d: 欠損日を 0 埋めしたチャート用データと当日 (JST) の送信数
   const filledDays = useMemo(() => fillDailyStats(timeseries), [timeseries]);
@@ -549,6 +620,9 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           </div>
         )}
 
+        {/* Phase 27f: バウンス率による自動停止の理由 (手動停止では出ない) */}
+        <HealthPauseBanner campaign={campaign} />
+
         {/* Phase 27d: 完了予定 / 完了 / 一時停止 */}
         <CompletionCard campaign={campaign} />
 
@@ -564,7 +638,11 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
               <p className="text-xl font-bold text-gray-900 tabular-nums mt-1">
                 {card.value}
                 {card.sub && (
-                  <span className="text-sm font-medium text-gray-500 ml-1">({card.sub})</span>
+                  <span
+                    className={`text-sm font-medium ml-1 ${card.subClass ?? "text-gray-500"}`}
+                  >
+                    ({card.sub})
+                  </span>
                 )}
               </p>
             </div>
@@ -584,7 +662,10 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
                 エンゲージメントファネル (バウンス・配信停止を含む)
               </summary>
               <div className="mt-2">
-                <EngagementFunnel stats={stats} />
+                <EngagementFunnel
+                  stats={stats}
+                  bouncePauseThreshold={campaign.bouncePauseThreshold}
+                />
               </div>
             </details>
           )}
@@ -620,6 +701,12 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           <span>日次上限: {campaign.schedule.dailyCapPerMailbox} 通/mailbox</span>
           <span>間隔: {campaign.schedule.minIntervalSec} 秒</span>
           <span>ウォームアップ: {campaign.schedule.warmupEnabled ? "あり" : "なし"}</span>
+          <span>
+            自動停止:{" "}
+            {campaign.bouncePauseThreshold > 0
+              ? `バウンス率 ${campaign.bouncePauseThreshold}% 超`
+              : "なし"}
+          </span>
           <span>作成: {formatTimestamp(campaign.createdAt)}</span>
           {campaign.startedAt && <span>開始: {formatTimestamp(campaign.startedAt)}</span>}
           {campaign.completedAt && <span>完了: {formatTimestamp(campaign.completedAt)}</span>}

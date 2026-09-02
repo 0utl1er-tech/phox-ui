@@ -9,6 +9,11 @@ export interface CampaignSchedule {
   dailyCapPerMailbox: number;
   minIntervalSec: number;
   warmupEnabled: boolean;
+  /**
+   * Phase 27f: ハードバウンス率 (%) の自動停止しきい値。0 で無効。
+   * 既定 5 (DB default)。これを超えると backend がキャンペーンを一時停止する。
+   */
+  bouncePauseThreshold: number;
 }
 
 export interface CampaignSender {
@@ -75,6 +80,46 @@ export interface Campaign {
   estimatedCompletionAt?: string;
   /** Phase 27e: フォローアップステップ (2 通目以降)。空 = 単発キャンペーン。 */
   followups: CampaignFollowup[];
+  /** Phase 27f: ハードバウンス率 (%) がこれを超えると自動一時停止。0 で無効。 */
+  bouncePauseThreshold: number;
+  /** Phase 27f: 自動一時停止された理由 (空 = 手動停止 or 停止していない)。 */
+  healthPausedReason: string;
+}
+
+/**
+ * Phase 27f: 送信元メールボックスの健全性 (CheckMailboxHealth)。
+ * DNS を実引きするのでオンデマンド取得 (自動ポーリングしない)。
+ */
+export interface MailboxHealth {
+  mailboxId: string;
+  address: string;
+  domain: string;
+
+  // DNS 点検
+  hasMx: boolean;
+  mxHost: string;
+  hasSpf: boolean;
+  spf: string;
+  hasDmarc: boolean;
+  dmarc: string;
+  /** none | quarantine | reject */
+  dmarcPolicy: string;
+  hasDkim: boolean;
+  dkimSelector: string;
+
+  // 直近 30 日の送信実績 (全キャンペーン横断)
+  sent: number;
+  bounced: number;
+  unsubscribed: number;
+  replied: number;
+  /** % */
+  bounceRate: number;
+  /** % */
+  unsubscribeRate: number;
+
+  /** good | warn | bad */
+  grade: string;
+  warnings: string[];
 }
 
 /** Phase 27d: GetCampaignTimeseries の日次集計 1 日分。 */
@@ -139,6 +184,37 @@ export function normalizeSchedule(raw: any): CampaignSchedule {
     dailyCapPerMailbox: raw?.daily_cap_per_mailbox ?? raw?.dailyCapPerMailbox ?? 100,
     minIntervalSec: raw?.min_interval_sec ?? raw?.minIntervalSec ?? 90,
     warmupEnabled: raw?.warmup_enabled ?? raw?.warmupEnabled ?? false,
+    // 欠損 = proto3 の zero-value 省略 = 0 = 自動停止無効。DB default は 5 なので
+    // 既存キャンペーンは backend が 5 を返す (ここで 5 を補完してはいけない)。
+    bouncePauseThreshold: Number(
+      raw?.bounce_pause_threshold ?? raw?.bouncePauseThreshold ?? 0,
+    ),
+  };
+}
+
+/** Phase 27f: MailboxHealth の正規化 (snake/camel 両対応)。 */
+export function normalizeMailboxHealth(raw: any): MailboxHealth {
+  return {
+    mailboxId: raw?.mailbox_id ?? raw?.mailboxId ?? "",
+    address: raw?.address ?? "",
+    domain: raw?.domain ?? "",
+    hasMx: raw?.has_mx ?? raw?.hasMx ?? false,
+    mxHost: raw?.mx_host ?? raw?.mxHost ?? "",
+    hasSpf: raw?.has_spf ?? raw?.hasSpf ?? false,
+    spf: raw?.spf ?? "",
+    hasDmarc: raw?.has_dmarc ?? raw?.hasDmarc ?? false,
+    dmarc: raw?.dmarc ?? "",
+    dmarcPolicy: raw?.dmarc_policy ?? raw?.dmarcPolicy ?? "",
+    hasDkim: raw?.has_dkim ?? raw?.hasDkim ?? false,
+    dkimSelector: raw?.dkim_selector ?? raw?.dkimSelector ?? "",
+    sent: Number(raw?.sent ?? 0),
+    bounced: Number(raw?.bounced ?? 0),
+    unsubscribed: Number(raw?.unsubscribed ?? 0),
+    replied: Number(raw?.replied ?? 0),
+    bounceRate: Number(raw?.bounce_rate ?? raw?.bounceRate ?? 0),
+    unsubscribeRate: Number(raw?.unsubscribe_rate ?? raw?.unsubscribeRate ?? 0),
+    grade: raw?.grade ?? "",
+    warnings: (raw?.warnings ?? []) as string[],
   };
 }
 
@@ -219,6 +295,11 @@ export function normalizeCampaign(raw: any): Campaign {
     followups: ((raw?.followups ?? []) as any[]).map((f, i) =>
       normalizeFollowup(f, i),
     ),
+    bouncePauseThreshold: Number(
+      raw?.bounce_pause_threshold ?? raw?.bouncePauseThreshold ?? 0,
+    ),
+    healthPausedReason:
+      raw?.health_paused_reason ?? raw?.healthPausedReason ?? "",
   };
 }
 
