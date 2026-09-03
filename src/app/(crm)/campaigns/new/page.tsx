@@ -68,6 +68,10 @@ interface CreateResult {
   skippedNoEmail: number;
   skippedSuppressed: number;
   skippedDuplicate: number;
+  /** Phase 27f: MX レコードが無く配信不能と判定して除外した件数。 */
+  skippedNoMx: number;
+  /** Phase 27f: 送信対象に含まれる role アドレス (info@ 等) の件数 (除外はしない)。 */
+  roleAddressCount: number;
 }
 
 // Phase 27e: フォローアップ (2 通目以降) の入力ドラフト。stepNo は送信不要 (自動採番)。
@@ -109,6 +113,8 @@ export default function NewCampaignPage() {
   const [dailyCap, setDailyCap] = useState(100);
   const [minIntervalSec, setMinIntervalSec] = useState(90);
   const [warmupEnabled, setWarmupEnabled] = useState(true);
+  // Phase 27f: バウンス率による自動停止のしきい値 (%)。0 で無効。
+  const [bouncePauseThreshold, setBouncePauseThreshold] = useState(5);
   const [trackOpens, setTrackOpens] = useState(true);
   const [trackClicks, setTrackClicks] = useState(true);
 
@@ -310,8 +316,17 @@ export default function NewCampaignPage() {
       dailyCap >= 1 &&
       dailyCap <= 1000 &&
       minIntervalSec >= 10 &&
-      minIntervalSec <= 3600,
-    [selectedMailboxIds, sendStartHour, sendEndHour, dailyCap, minIntervalSec],
+      minIntervalSec <= 3600 &&
+      bouncePauseThreshold >= 0 &&
+      bouncePauseThreshold <= 100,
+    [
+      selectedMailboxIds,
+      sendStartHour,
+      sendEndHour,
+      dailyCap,
+      minIntervalSec,
+      bouncePauseThreshold,
+    ],
   );
 
   // Phase 27e: フォローアップの操作ヘルパー
@@ -386,6 +401,7 @@ export default function NewCampaignPage() {
               dailyCapPerMailbox: dailyCap,
               minIntervalSec,
               warmupEnabled,
+              bouncePauseThreshold,
             },
             sender: {
               senderOrg: senderOrg.trim(),
@@ -415,6 +431,8 @@ export default function NewCampaignPage() {
         skippedNoEmail: Number(data.skipped_no_email ?? data.skippedNoEmail ?? 0),
         skippedSuppressed: Number(data.skipped_suppressed ?? data.skippedSuppressed ?? 0),
         skippedDuplicate: Number(data.skipped_duplicate ?? data.skippedDuplicate ?? 0),
+        skippedNoMx: Number(data.skipped_no_mx ?? data.skippedNoMx ?? 0),
+        roleAddressCount: Number(data.role_address_count ?? data.roleAddressCount ?? 0),
       });
       clearSelection();
     } catch (e: unknown) {
@@ -430,7 +448,8 @@ export default function NewCampaignPage() {
     const totalSkipped =
       createResult.skippedNoEmail +
       createResult.skippedSuppressed +
-      createResult.skippedDuplicate;
+      createResult.skippedDuplicate +
+      createResult.skippedNoMx;
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
         <div className="max-w-2xl mx-auto px-4 py-12">
@@ -456,6 +475,21 @@ export default function NewCampaignPage() {
                 {createResult.skippedDuplicate > 0 && (
                   <p>・アドレス重複: {createResult.skippedDuplicate.toLocaleString()} 件</p>
                 )}
+                {createResult.skippedNoMx > 0 && (
+                  <p>
+                    ・配信不能ドメイン (MXレコードなし):{" "}
+                    {createResult.skippedNoMx.toLocaleString()} 件
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Phase 27f: role アドレスは除外していないのでエラーではなく注意喚起 */}
+            {createResult.roleAddressCount > 0 && (
+              <div className="text-left bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6 text-sm text-blue-800">
+                info@ などの代表アドレスが{" "}
+                {createResult.roleAddressCount.toLocaleString()} 件含まれています
+                (送信はされますが、返信率が低く苦情が出やすい傾向があります)
               </div>
             )}
 
@@ -699,6 +733,32 @@ export default function NewCampaignPage() {
                     onChange={(e) => setMinIntervalSec(Number(e.target.value))}
                   />
                 </div>
+              </div>
+
+              {/* Phase 27f: バウンス率サーキットブレーカー */}
+              <div className="space-y-1 pt-1">
+                <label
+                  className="text-sm font-medium text-gray-700"
+                  htmlFor="bounce-pause-threshold"
+                >
+                  バウンス率による自動停止
+                </label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="bounce-pause-threshold"
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={bouncePauseThreshold}
+                    onChange={(e) => setBouncePauseThreshold(Number(e.target.value))}
+                    className="max-w-[120px]"
+                  />
+                  <span className="text-sm text-gray-500">%</span>
+                </div>
+                <p className="text-xs text-gray-500">
+                  バウンス率がこの値を超えるとキャンペーンを自動的に一時停止します。0 で無効。
+                  送信ドメインの評価を守るための安全装置です。
+                </p>
               </div>
 
               <div className="space-y-2 pt-1">
@@ -1066,6 +1126,7 @@ export default function NewCampaignPage() {
                   <span className="w-40 text-gray-500 flex-shrink-0">ペーシング</span>
                   <span className="text-gray-900">
                     日次 {dailyCap} 通/mailbox・間隔 {minIntervalSec} 秒・ウォームアップ{warmupEnabled ? "あり" : "なし"}
+                    ・バウンス率{bouncePauseThreshold > 0 ? `${bouncePauseThreshold}% で自動停止` : "による自動停止なし"}
                   </span>
                 </div>
                 <div className="flex px-4 py-2">
