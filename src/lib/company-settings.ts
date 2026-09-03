@@ -14,9 +14,17 @@
 
 export type CallLogMode = "click" | "zoom";
 
+/** Phase 27h: 反響通知のイベント種別 (backend の notify.KnownEvents と対応)。 */
+export type NotifyEvent = "reply" | "click" | "unsubscribe" | "bounce" | "open";
+export const NOTIFY_EVENTS: NotifyEvent[] = ["reply", "click", "unsubscribe", "bounce", "open"];
+
 export interface CompanySettings {
   callLogMode: CallLogMode;
   canEdit: boolean;
+  /** Discord Webhook URL。canEdit=false のときは "(設定済み)" 等のマスク値。 */
+  notifyWebhookUrl: string;
+  /** 通知 ON のイベント (カンマ区切りを分解済み)。 */
+  notifyEvents: NotifyEvent[];
 }
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
@@ -27,9 +35,15 @@ let inflight: Promise<CompanySettings> | null = null;
 /** Connect JSON は snake_case / camelCase どちらでも返り得るので両対応で読む。 */
 function normalizeCompanySettings(data: Record<string, unknown>): CompanySettings {
   const rawMode = (data.callLogMode ?? data.call_log_mode ?? "click") as string;
+  const rawEvents = String(data.notifyEvents ?? data.notify_events ?? "");
   return {
     callLogMode: rawMode === "zoom" ? "zoom" : "click",
     canEdit: Boolean(data.canEdit ?? data.can_edit ?? false),
+    notifyWebhookUrl: String(data.notifyWebhookUrl ?? data.notify_webhook_url ?? ""),
+    notifyEvents: rawEvents
+      .split(",")
+      .map((e) => e.trim())
+      .filter((e): e is NotifyEvent => (NOTIFY_EVENTS as string[]).includes(e)),
   };
 }
 
