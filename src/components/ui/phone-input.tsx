@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { FiPhone, FiEdit2, FiCheck, FiX } from "react-icons/fi";
 import { cn } from "@/lib/utils";
 import { useAuthStore } from "@/store/authStore";
+import { getCallLogMode } from "@/lib/company-settings";
 
 interface PhoneInputProps {
   value: string;
@@ -129,7 +130,11 @@ export function PhoneInput({
     }
 
     // 2. フォールバック: 従来の Activity 記録 + zoomphonecall: URL scheme
-    await saveCallHistoryLegacy(phone);
+    // Phase 27f: 通話記録モードが 'zoom' (Zoom 通話履歴マスター) の会社では
+    // フォールバックでも自動記録しない — 実通話は backend が Zoom から同期する。
+    if ((await getCallLogMode(token)) !== "zoom") {
+      await saveCallHistoryLegacy(phone);
+    }
     const formattedPhone = formatPhoneForTel(phone);
     const link = document.createElement('a');
     link.href = `zoomphonecall:${formattedPhone}`;
@@ -298,7 +303,8 @@ export function PhoneLink({ phone, className, customerId, bookId, onCallCreated 
     } catch { /* fallback */ }
 
     // Fallback: legacy Activity 記録 + zoomphonecall: URL
-    if (customerId && bookId) {
+    // Phase 27f: 'zoom' モードでは自動記録せず発信リンク起動のみ (PhoneInput と同じ)。
+    if (customerId && bookId && (await getCallLogMode(token)) !== "zoom") {
       try {
         const statusResp = await fetch(`${apiUrl}/status.v1.StatusService/GetDefaultStatus`, {
           method: 'POST',

@@ -10,6 +10,7 @@ import GoogleCalendarConnectionCard from "@/components/crm/google-calendar-conne
 import ICalFeedCard from "@/components/crm/ical-feed-card";
 import MailboxManagement from "@/components/crm/mailbox-management";
 import SuppressionManagement from "@/components/crm/campaign/suppression-management";
+import AdminSettings from "@/components/crm/admin-settings";
 
 interface User {
   id: string;
@@ -486,6 +487,9 @@ export default function UserSettingsPage() {
 
         {/* Phase 27a: キャンペーン配信除外リスト */}
         {authUser && <SuppressionManagement />}
+
+        {/* Phase 27f: 管理者設定 (通話記録モード) */}
+        {authUser && <AdminSettings />}
 
         {user?.company && (
           <>
