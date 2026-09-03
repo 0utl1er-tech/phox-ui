@@ -122,6 +122,35 @@ export interface MailboxHealth {
   warnings: string[];
 }
 
+/**
+ * Phase 27g: メールボックス毎の送信実績サマリ (ListMailboxesHealth)。
+ * DB 集計のみで軽いので一覧表示のたびに取得してよい (DNS は含まない)。
+ */
+export interface MailboxHealthStats {
+  mailboxId: string;
+  address: string;
+  /** 本日 (JST 0時起算) の送信数。全キャンペーン横断。 */
+  sentToday: number;
+  lastSentAt?: string;
+  sent30d: number;
+  bounced30d: number;
+  unsubscribed30d: number;
+  replied30d: number;
+  opened30d: number;
+  /** % */
+  bounceRate: number;
+  /** % */
+  unsubscribeRate: number;
+  /** % */
+  replyRate: number;
+  /** % */
+  openRate: number;
+  runningCampaigns: number;
+  imapSyncedAt?: string;
+  /** good | warn | bad (実績のみの簡易判定) */
+  grade: string;
+}
+
 /** Phase 27d: GetCampaignTimeseries の日次集計 1 日分。 */
 export interface CampaignDailyStat {
   /** "YYYY-MM-DD" (JST)。 */
@@ -215,6 +244,28 @@ export function normalizeMailboxHealth(raw: any): MailboxHealth {
     unsubscribeRate: Number(raw?.unsubscribe_rate ?? raw?.unsubscribeRate ?? 0),
     grade: raw?.grade ?? "",
     warnings: (raw?.warnings ?? []) as string[],
+  };
+}
+
+/** Phase 27g: MailboxHealthStats の正規化 (snake/camel 両対応)。 */
+export function normalizeMailboxHealthStats(raw: any): MailboxHealthStats {
+  return {
+    mailboxId: raw?.mailbox_id ?? raw?.mailboxId ?? "",
+    address: raw?.address ?? "",
+    sentToday: Number(raw?.sent_today ?? raw?.sentToday ?? 0),
+    lastSentAt: raw?.last_sent_at ?? raw?.lastSentAt ?? undefined,
+    sent30d: Number(raw?.sent_30d ?? raw?.sent30d ?? 0),
+    bounced30d: Number(raw?.bounced_30d ?? raw?.bounced30d ?? 0),
+    unsubscribed30d: Number(raw?.unsubscribed_30d ?? raw?.unsubscribed30d ?? 0),
+    replied30d: Number(raw?.replied_30d ?? raw?.replied30d ?? 0),
+    opened30d: Number(raw?.opened_30d ?? raw?.opened30d ?? 0),
+    bounceRate: Number(raw?.bounce_rate ?? raw?.bounceRate ?? 0),
+    unsubscribeRate: Number(raw?.unsubscribe_rate ?? raw?.unsubscribeRate ?? 0),
+    replyRate: Number(raw?.reply_rate ?? raw?.replyRate ?? 0),
+    openRate: Number(raw?.open_rate ?? raw?.openRate ?? 0),
+    runningCampaigns: Number(raw?.running_campaigns ?? raw?.runningCampaigns ?? 0),
+    imapSyncedAt: raw?.imap_synced_at ?? raw?.imapSyncedAt ?? undefined,
+    grade: raw?.grade ?? "",
   };
 }
 

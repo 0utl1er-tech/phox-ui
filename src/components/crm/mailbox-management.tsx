@@ -18,8 +18,23 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuthStore } from "@/store/authStore";
-import { FiMail, FiPlus, FiTrash2, FiUsers, FiChevronDown, FiChevronRight, FiActivity } from "react-icons/fi";
+import {
+  FiMail,
+  FiPlus,
+  FiTrash2,
+  FiUsers,
+  FiChevronDown,
+  FiChevronRight,
+  FiActivity,
+  FiSend,
+  FiAlertTriangle,
+} from "react-icons/fi";
 import { MailboxHealthCard } from "@/components/crm/campaign/MailboxHealthCard";
+import {
+  type MailboxHealthStats,
+  normalizeMailboxHealthStats,
+  formatRelativeTime,
+} from "@/lib/campaign";
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8082";
 
@@ -52,6 +67,70 @@ const roleBadge: Record<string, string> = {
   ROLE_OWNER: "bg-purple-100 text-purple-800",
 };
 
+// Phase 27g: 実績ベースの簡易健全性バッジ (バウンス率 <2% 健全 / 2-5% 注意 / >5% 警告)。
+// 判定そのものは backend (ListMailboxesHealth の grade) に従う。
+const healthGradeBadge: Record<string, { label: string; className: string }> = {
+  good: { label: "健全", className: "bg-green-100 text-green-800" },
+  warn: { label: "注意", className: "bg-amber-100 text-amber-800" },
+  bad: { label: "警告", className: "bg-red-100 text-red-800" },
+};
+
+const IMAP_STALE_MS = 24 * 60 * 60 * 1000;
+
+const pct = (v: number) => `${v.toFixed(1)}%`;
+
+/** Phase 27g: mailbox 1 件分の実績サマリ行。stats 未取得 (undefined) なら出さない。 */
+function MailboxHealthSummary({ stats }: { stats: MailboxHealthStats }) {
+  const grade = healthGradeBadge[stats.grade];
+  const lastSent = formatRelativeTime(stats.lastSentAt);
+  const imapAgo = formatRelativeTime(stats.imapSyncedAt);
+  const imapStale =
+    !stats.imapSyncedAt ||
+    Date.now() - new Date(stats.imapSyncedAt).getTime() > IMAP_STALE_MS;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-500 mt-1">
+      {grade && (
+        <span
+          className={`inline-flex items-center rounded-full px-2 py-0.5 font-medium ${grade.className}`}
+        >
+          {grade.label}
+        </span>
+      )}
+      <span className="inline-flex items-center gap-1">
+        <FiSend className="w-3 h-3" />
+        本日 {stats.sentToday.toLocaleString()}通送信
+        {lastSent && ` ・ 最終送信 ${lastSent}`}
+      </span>
+      <span>
+        30日: 送信{stats.sent30d.toLocaleString()}
+        {stats.sent30d > 0 && (
+          <>
+            {" ・ バウンス"}
+            {pct(stats.bounceRate)}
+            {" ・ 配停"}
+            {pct(stats.unsubscribeRate)}
+            {" ・ 返信"}
+            {pct(stats.replyRate)}
+          </>
+        )}
+      </span>
+      {stats.runningCampaigns > 0 && (
+        <span>実行中キャンペーン {stats.runningCampaigns}件で使用中</span>
+      )}
+      {imapStale ? (
+        <span className="inline-flex items-center gap-1 text-amber-600">
+          <FiAlertTriangle className="w-3 h-3" />
+          {imapAgo
+            ? `受信取り込みが止まっている可能性 (最終同期 ${imapAgo})`
+            : "受信取り込みが止まっている可能性 (同期記録なし)"}
+        </span>
+      ) : (
+        imapAgo && <span>IMAP同期 {imapAgo}</span>
+      )}
+    </div>
+  );
+}
+
 export default function MailboxManagement() {
   const authUser = useAuthStore((s) => s.user);
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
@@ -74,6 +153,11 @@ export default function MailboxManagement() {
   // Phase 27f: 健全性チェックを開いているメールボックス (null = 閉)。
   // DNS を引くので開いただけでは走らせず、カード内のボタン操作でのみ実行する。
   const [healthOpen, setHealthOpen] = useState<string | null>(null);
+
+  // Phase 27g: mailbox 毎の送信実績サマリ (ListMailboxesHealth)。
+  // DB 集計のみで軽いので一覧と一緒に毎回取得する (DNS 点検は含まれない)。
+  const [healthStats, setHealthStats] = useState<Record<string, MailboxHealthStats>>({});
+  const [healthStatsError, setHealthStatsError] = useState(false);
 
   const post = useCallback(
     async (path: string, body: object) => {
@@ -113,6 +197,23 @@ export default function MailboxManagement() {
     }
   }, [authUser, post]);
 
+  const fetchHealthStats = useCallback(async () => {
+    if (!authUser) return;
+    try {
+      const data = await post("/campaign.v1.CampaignService/ListMailboxesHealth", {});
+      const map: Record<string, MailboxHealthStats> = {};
+      for (const raw of data.stats || []) {
+        const s = normalizeMailboxHealthStats(raw);
+        if (s.mailboxId) map[s.mailboxId] = s;
+      }
+      setHealthStats(map);
+      setHealthStatsError(false);
+    } catch {
+      // サマリが出ないだけなので一覧自体は生かす (行内に注記を出す)。
+      setHealthStatsError(true);
+    }
+  }, [authUser, post]);
+
   const fetchCompanyUsers = useCallback(async () => {
     if (!authUser) return;
     try {
@@ -125,8 +226,9 @@ export default function MailboxManagement() {
 
   useEffect(() => {
     fetchMailboxes();
+    fetchHealthStats();
     fetchCompanyUsers();
-  }, [fetchMailboxes, fetchCompanyUsers]);
+  }, [fetchMailboxes, fetchHealthStats, fetchCompanyUsers]);
 
   const handleCreate = async () => {
     if (!newAddress) return;
@@ -142,6 +244,7 @@ export default function MailboxManagement() {
       setNewDisplayName("");
       setNewPassword("");
       await fetchMailboxes();
+      fetchHealthStats();
     } catch (e) {
       setError(e instanceof Error ? e.message : "登録に失敗しました");
     } finally {
@@ -156,6 +259,7 @@ export default function MailboxManagement() {
       if (expanded === id) setExpanded(null);
       if (healthOpen === id) setHealthOpen(null);
       await fetchMailboxes();
+      fetchHealthStats();
     } catch (e) {
       setError(e instanceof Error ? e.message : "削除に失敗しました");
     }
@@ -264,6 +368,24 @@ export default function MailboxManagement() {
           <p className="text-sm text-gray-400">まだメールボックスがありません。</p>
         ) : (
           <div className="space-y-2">
+            {/* Phase 27g: 全 mailbox の本日合計送信数 */}
+            <div className="flex flex-wrap items-center gap-2 px-3 py-2 rounded-lg bg-blue-50 text-sm text-blue-900">
+              <FiSend className="w-4 h-4" />
+              <span>
+                本日の合計送信数:{" "}
+                <span className="font-semibold tabular-nums">
+                  {mailboxes
+                    .reduce((sum, m) => sum + (healthStats[m.id]?.sentToday ?? 0), 0)
+                    .toLocaleString()}
+                </span>
+                通
+              </span>
+              {healthStatsError && (
+                <span className="text-xs text-amber-700">
+                  (実績サマリの取得に失敗しました)
+                </span>
+              )}
+            </div>
             {mailboxes.map((m) => (
               <div key={m.id} className="border rounded-lg">
                 <div className="flex items-center gap-2 p-3">
@@ -279,6 +401,7 @@ export default function MailboxManagement() {
                     <div className="font-medium text-gray-900 truncate">
                       {m.displayName ? `${m.displayName} <${m.address}>` : m.address}
                     </div>
+                    {healthStats[m.id] && <MailboxHealthSummary stats={healthStats[m.id]} />}
                   </div>
                   <Badge className={roleBadge[m.role] ?? ""}>{roleLabels[m.role] ?? m.role}</Badge>
                   {!m.active && <Badge className="bg-gray-100 text-gray-500">無効</Badge>}
@@ -286,11 +409,11 @@ export default function MailboxManagement() {
                     variant="ghost"
                     size="sm"
                     onClick={() => setHealthOpen((cur) => (cur === m.id ? null : m.id))}
-                    aria-label="健全性"
-                    title="送信ドメインの健全性を確認"
+                    aria-label="詳細チェック"
+                    title="送信ドメインの DNS 設定 (SPF/DKIM/DMARC/MX) を詳細チェック"
                   >
                     <FiActivity className="w-4 h-4 mr-1" />
-                    健全性
+                    詳細チェック
                   </Button>
                   {m.role === "ROLE_OWNER" && (
                     <Button variant="ghost" size="sm" onClick={() => handleDelete(m.id)} aria-label="削除">
