@@ -1,16 +1,18 @@
 "use client";
 
 // Phase 27f: 管理者設定 (会社単位) — 通話記録モード。
+// Phase 27h: 反響通知 (キャンペーンイベントの Discord Webhook 通知)。
 // 設定画面に Card として埋め込む。閲覧は誰でも可、変更はオーナーのみ
-// (canEdit=false ならラジオを無効化して案内を出す)。
+// (canEdit=false ならフォームを無効化して案内を出す)。
 
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FiLoader, FiSettings } from "react-icons/fi";
+import { FiBell, FiLoader, FiSettings } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import { parseConnectError } from "@/lib/campaign";
 import {
   type CallLogMode,
+  type NotifyEvent,
   fetchCompanySettings,
   invalidateCompanySettingsCache,
 } from "@/lib/company-settings";
@@ -32,6 +34,36 @@ const MODE_OPTIONS: { value: CallLogMode; label: string; description: string }[]
   },
 ];
 
+// Phase 27h: 反響通知のイベント種別 (既定: reply のみ ON)。
+const NOTIFY_EVENT_OPTIONS: { value: NotifyEvent; label: string; description: string }[] = [
+  {
+    value: "reply",
+    label: "返信",
+    description: "キャンペーンメールに顧客から返信が届いたとき (初回のみ)。",
+  },
+  {
+    value: "click",
+    label: "クリック",
+    description: "メール内のリンクが初めてクリックされたとき。",
+  },
+  {
+    value: "unsubscribe",
+    label: "配信停止",
+    description: "顧客が配信停止リンクを踏んだとき。",
+  },
+  {
+    value: "bounce",
+    label: "バウンス",
+    description: "メールが宛先不明などで届かなかったとき。",
+  },
+  {
+    value: "open",
+    label: "開封",
+    description:
+      "メールが初めて開封されたとき。メールクライアントのプロキシで多重計上されるためノイズ多め。",
+  },
+];
+
 export default function AdminSettings() {
   const accessToken = useAuthStore((s) => s.user?.accessToken);
   const [mode, setMode] = useState<CallLogMode>("click");
@@ -40,6 +72,10 @@ export default function AdminSettings() {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Phase 27h: 反響通知
+  const [notifyUrl, setNotifyUrl] = useState("");
+  const [notifyEvents, setNotifyEvents] = useState<NotifyEvent[]>([]);
+  const [isSavingNotify, setIsSavingNotify] = useState(false);
 
   const loadSettings = useCallback(async () => {
     if (!accessToken) return;
@@ -49,6 +85,8 @@ export default function AdminSettings() {
       const settings = await fetchCompanySettings(accessToken);
       setMode(settings.callLogMode);
       setCanEdit(settings.canEdit);
+      setNotifyUrl(settings.notifyWebhookUrl);
+      setNotifyEvents(settings.notifyEvents);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : "unknown error";
       setError(`設定の取得に失敗しました: ${message}`);
@@ -90,6 +128,45 @@ export default function AdminSettings() {
       setError(`更新に失敗しました: ${message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const toggleNotifyEvent = (event: NotifyEvent) => {
+    setNotifyEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event],
+    );
+  };
+
+  // Phase 27h: 反響通知設定の保存。call_log_mode は送らない (空 = 変更なし)。
+  const handleSaveNotify = async () => {
+    if (!accessToken || !canEdit || isSavingNotify) return;
+    setIsSavingNotify(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const response = await fetch(`${API_URL}/company.v1.CompanyService/UpdateSettings`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          notify_webhook_url: notifyUrl.trim(),
+          notify_events: notifyEvents.join(","),
+        }),
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(parseConnectError(text, response.status));
+      }
+      invalidateCompanySettingsCache();
+      setSuccessMessage("反響通知の設定を保存しました");
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "unknown error";
+      setError(`更新に失敗しました: ${message}`);
+    } finally {
+      setIsSavingNotify(false);
     }
   };
 
@@ -163,6 +240,75 @@ export default function AdminSettings() {
                   <FiLoader className="w-4 h-4 animate-spin" />
                   保存中...
                 </p>
+              )}
+            </div>
+
+            {/* Phase 27h: 反響通知 (Discord Webhook) */}
+            <div className="pt-4 border-t border-gray-200">
+              <p className="text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                <FiBell className="w-4 h-4" />
+                反響通知
+              </p>
+              <p className="text-sm text-gray-500 mb-3">
+                キャンペーンの反響 (返信など) を Discord に通知します。DiscordのチャンネルからWebhookを発行して貼り付けてください。
+              </p>
+
+              <label className="block mb-3">
+                <span className="block text-sm text-gray-700 mb-1">Discord Webhook URL</span>
+                <input
+                  type="text"
+                  value={notifyUrl}
+                  onChange={(e) => setNotifyUrl(e.target.value)}
+                  disabled={!canEdit || isSavingNotify}
+                  placeholder="https://discord.com/api/webhooks/..."
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-400 focus:outline-none disabled:bg-gray-50 disabled:text-gray-500"
+                />
+                {!canEdit && (
+                  <span className="block mt-1 text-xs text-gray-400">
+                    URL はオーナーのみ閲覧・変更できます
+                  </span>
+                )}
+              </label>
+
+              <div className="space-y-2 mb-3">
+                {NOTIFY_EVENT_OPTIONS.map((option) => {
+                  const checked = notifyEvents.includes(option.value);
+                  const disabled = !canEdit || isSavingNotify;
+                  return (
+                    <label
+                      key={option.value}
+                      className={[
+                        "flex items-start gap-3 rounded-lg border p-3 transition-colors",
+                        checked ? "border-blue-400 bg-blue-50/60" : "border-gray-200 bg-white",
+                        disabled ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:border-blue-300",
+                      ].join(" ")}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => toggleNotifyEvent(option.value)}
+                        className="mt-1"
+                      />
+                      <span className="min-w-0">
+                        <span className="block font-medium text-gray-900">{option.label}</span>
+                        <span className="block text-sm text-gray-500">{option.description}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => void handleSaveNotify()}
+                  disabled={isSavingNotify}
+                  className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-60"
+                >
+                  {isSavingNotify && <FiLoader className="w-4 h-4 animate-spin" />}
+                  {isSavingNotify ? "保存中..." : "通知設定を保存"}
+                </button>
               )}
             </div>
           </div>
