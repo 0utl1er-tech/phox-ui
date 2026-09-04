@@ -104,6 +104,12 @@ export default function NewCampaignPage() {
 
   const [step, setStep] = useState<WizardStep>(1);
 
+  // --- ① 受信者: Book 全体を追加 (Phase 28a) ---
+  // 選択 Book の全顧客はサーバ側で受信者スナップショットに展開される
+  // (customer_ids と union + dedup)。
+  const [selectedBookIds, setSelectedBookIds] = useState<string[]>([]);
+  const [bookToAdd, setBookToAdd] = useState("");
+
   // --- ② 送信設定 ---
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([]);
   const [selectedMailboxIds, setSelectedMailboxIds] = useState<string[]>([]);
@@ -146,6 +152,26 @@ export default function NewCampaignPage() {
     () => recipients.filter(([, info]) => !info.email).length,
     [recipients],
   );
+
+  // Phase 28a: 個別選択 or Book 全体のどちらかがあれば先に進める。
+  const hasRecipients = recipients.length > 0 || selectedBookIds.length > 0;
+  const selectedBooks = useMemo(
+    () => selectedBookIds.map((id) => books.find((b) => b.id === id) ?? { id, name: id }),
+    [selectedBookIds, books],
+  );
+  const addableBooks = useMemo(
+    () => books.filter((b) => !selectedBookIds.includes(b.id)),
+    [books, selectedBookIds],
+  );
+
+  const addBook = () => {
+    if (!bookToAdd || selectedBookIds.includes(bookToAdd)) return;
+    setSelectedBookIds((prev) => [...prev, bookToAdd]);
+    setBookToAdd("");
+  };
+  const removeBook = (id: string) => {
+    setSelectedBookIds((prev) => prev.filter((x) => x !== id));
+  };
 
   // メールボックス一覧 (editor 以上のみ)
   useEffect(() => {
@@ -366,13 +392,13 @@ export default function NewCampaignPage() {
   const canSubmit = useMemo(
     () =>
       !isSubmitting &&
-      recipients.length > 0 &&
+      hasRecipients &&
       canProceedStep2 &&
       canProceedStep3 &&
       senderOrg.trim().length > 0 &&
       senderAddress.trim().length > 0 &&
       senderContact.trim().length > 0,
-    [isSubmitting, recipients, canProceedStep2, canProceedStep3, senderOrg, senderAddress, senderContact],
+    [isSubmitting, hasRecipients, canProceedStep2, canProceedStep3, senderOrg, senderAddress, senderContact],
   );
 
   const handleCreate = async () => {
@@ -391,6 +417,8 @@ export default function NewCampaignPage() {
           body: JSON.stringify({
             name: name.trim(),
             customerIds: recipients.map(([id]) => id),
+            // Phase 28a: Book 全体はサーバ側で展開される (customer_ids と union + dedup)
+            bookIds: selectedBookIds,
             mailboxIds: selectedMailboxIds,
             subject,
             body,
@@ -551,11 +579,64 @@ export default function NewCampaignPage() {
           {step === 1 && (
             <div className="space-y-4">
               <h2 className="text-lg font-semibold text-gray-900">受信者の確認</h2>
+
+              {/* ---------- Phase 28a: Book 全体を追加 ---------- */}
+              <div className="space-y-2 rounded-md bg-blue-50 border border-blue-100 p-3">
+                <p className="text-sm font-medium text-gray-700">Book 全体を追加</p>
+                <p className="text-xs text-gray-500">
+                  Book 内の全顧客をまとめて受信者にします (作成時にサーバ側で展開され、
+                  個別選択分と重複する顧客は 1 件にまとめられます)。
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <select
+                    aria-label="追加する Book 選択"
+                    value={bookToAdd}
+                    onChange={(e) => setBookToAdd(e.target.value)}
+                    className="flex-1 min-w-[180px] border border-gray-300 rounded-md px-3 py-2 text-sm"
+                  >
+                    <option value="">(Book を選択)</option>
+                    {addableBooks.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={addBook}
+                    disabled={!bookToAdd}
+                  >
+                    <FiPlus className="w-4 h-4 mr-1" />
+                    追加
+                  </Button>
+                </div>
+                {selectedBooks.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {selectedBooks.map((b) => (
+                      <span
+                        key={b.id}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-xs font-medium"
+                      >
+                        {b.name}
+                        <button
+                          type="button"
+                          onClick={() => removeBook(b.id)}
+                          className="p-0.5 hover:bg-blue-200 rounded-full transition-colors"
+                          title={`${b.name} を外す`}
+                        >
+                          <FiX className="w-3 h-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {recipients.length === 0 ? (
                 <div className="text-center py-8 space-y-4">
                   <p className="text-gray-600">
-                    受信者が選択されていません。Book の顧客一覧または検索結果で
-                    チェックボックスから受信者を選択してください。
+                    個別の受信者が選択されていません。Book の顧客一覧または検索結果で
+                    チェックボックスから選択するか、上の「Book 全体を追加」を使ってください。
                   </p>
                   <Button variant="outline" onClick={() => router.back()}>
                     <FiArrowLeft className="w-4 h-4 mr-2" />
@@ -1105,7 +1186,20 @@ export default function NewCampaignPage() {
                 </div>
                 <div className="flex px-4 py-2">
                   <span className="w-40 text-gray-500 flex-shrink-0">受信者</span>
-                  <span className="text-gray-900">{recipients.length.toLocaleString()} 件</span>
+                  <span className="text-gray-900">
+                    {[
+                      recipients.length > 0
+                        ? `個別 ${recipients.length.toLocaleString()} 件`
+                        : "",
+                      selectedBooks.length > 0
+                        ? `Book 全体 ${selectedBooks.length} 冊 (${selectedBooks
+                            .map((b) => b.name)
+                            .join(", ")} — 作成時に展開)`
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" + ") || "-"}
+                  </span>
                 </div>
                 <div className="flex px-4 py-2">
                   <span className="w-40 text-gray-500 flex-shrink-0">メールボックス</span>
@@ -1185,7 +1279,7 @@ export default function NewCampaignPage() {
                   type="button"
                   onClick={() => setStep((s) => (s + 1) as WizardStep)}
                   disabled={
-                    (step === 1 && recipients.length === 0) ||
+                    (step === 1 && !hasRecipients) ||
                     (step === 2 && !canProceedStep2) ||
                     (step === 3 && !canProceedStep3)
                   }
