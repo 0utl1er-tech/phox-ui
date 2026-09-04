@@ -2,6 +2,7 @@
 
 // Phase 27f: 管理者設定 (会社単位) — 通話記録モード。
 // Phase 27h: 反響通知 (キャンペーンイベントの Discord Webhook 通知)。
+// Phase 28f: キャンペーン自動下書き (投函された Book から下書きを自動生成)。
 // 設定画面に Card として埋め込む。閲覧は誰でも可、変更はオーナーのみ
 // (canEdit=false ならフォームを無効化して案内を出す)。
 
@@ -10,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FiBell, FiLoader, FiSettings } from "react-icons/fi";
 import { useAuthStore } from "@/store/authStore";
 import { parseConnectError } from "@/lib/campaign";
+import AutoDraftSettings from "@/components/crm/campaign/autodraft-settings";
 import {
   type CallLogMode,
   type NotifyEvent,
@@ -61,6 +63,12 @@ const NOTIFY_EVENT_OPTIONS: { value: NotifyEvent; label: string; description: st
     label: "開封",
     description:
       "メールが初めて開封されたとき。メールクライアントのプロキシで多重計上されるためノイズ多め。",
+  },
+  {
+    value: "autodraft",
+    label: "自動下書きの作成",
+    description:
+      "投函されたリストからキャンペーンの下書きが自動生成されたとき (Phase 28f)。送信は開始されません。",
   },
 ];
 
@@ -311,6 +319,9 @@ export default function AdminSettings() {
                 </button>
               )}
             </div>
+
+            {/* Phase 28f: キャンペーン自動下書き (Book 投函 → 下書き自動生成) */}
+            <AutoDraftSettings canEdit={canEdit} />
           </div>
         )}
       </CardContent>

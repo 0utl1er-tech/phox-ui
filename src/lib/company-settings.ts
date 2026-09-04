@@ -14,9 +14,19 @@
 
 export type CallLogMode = "click" | "zoom";
 
-/** Phase 27h: 反響通知のイベント種別 (backend の notify.KnownEvents と対応)。 */
-export type NotifyEvent = "reply" | "click" | "unsubscribe" | "bounce" | "open";
-export const NOTIFY_EVENTS: NotifyEvent[] = ["reply", "click", "unsubscribe", "bounce", "open"];
+/**
+ * Phase 27h: 反響通知のイベント種別 (backend の notify.KnownEvents と対応)。
+ * Phase 28f: autodraft = 下書きが自動生成されたときの運用通知 (既定 OFF)。
+ */
+export type NotifyEvent = "reply" | "click" | "unsubscribe" | "bounce" | "open" | "autodraft";
+export const NOTIFY_EVENTS: NotifyEvent[] = [
+  "reply",
+  "click",
+  "unsubscribe",
+  "bounce",
+  "open",
+  "autodraft",
+];
 
 export interface CompanySettings {
   callLogMode: CallLogMode;

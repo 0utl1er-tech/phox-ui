@@ -397,6 +397,60 @@ export function normalizeSuppression(raw: any): Suppression {
 }
 
 /**
+ * Phase 28f: キャンペーン自動下書きテンプレート。
+ *
+ * 投函された Book (28d の `GM_{業種}_{都道府県}_{YYYY-MM}_HPあり` /
+ * `_HPなし`) のうち bookNamePattern に LIKE 一致し、まだ下書きを作って
+ * いないものを backend の worker が 15 分毎に拾い、この文面で draft を
+ * 自動生成する。**開始 (送信) は常に人間が押す**。
+ *
+ * HP を持つ店 (乗り換え提案) と持たない店 (HP 制作の新規提案) では営業
+ * 内容が違うため、テンプレはパターン毎に複数登録できる。
+ */
+export interface CampaignAutoDraft {
+  id: string;
+  /** 管理用ラベル。 */
+  name: string;
+  enabled: boolean;
+  /** SQL LIKE パターン (例 `GM\_%\_HPあり`)。`\_` でリテラルの _。 */
+  bookNamePattern: string;
+  subject: string;
+  body: string;
+  followups: CampaignFollowup[];
+  mailboxIds: string[];
+  schedule: CampaignSchedule;
+  sender: CampaignSender;
+  trackOpens: boolean;
+  trackClicks: boolean;
+  creatorUserId: string;
+  /** 最後に下書きを自動生成した時刻 (未生成なら空)。 */
+  lastCreatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export function normalizeAutoDraft(raw: any): CampaignAutoDraft {
+  return {
+    id: raw?.id ?? "",
+    name: raw?.name ?? "",
+    enabled: Boolean(raw?.enabled ?? false),
+    bookNamePattern: raw?.book_name_pattern ?? raw?.bookNamePattern ?? "",
+    subject: raw?.subject ?? "",
+    body: raw?.body ?? "",
+    followups: (raw?.followups ?? []).map((f: any, i: number) => normalizeFollowup(f, i)),
+    mailboxIds: raw?.mailbox_ids ?? raw?.mailboxIds ?? [],
+    schedule: normalizeSchedule(raw?.schedule),
+    sender: normalizeSender(raw?.sender),
+    trackOpens: Boolean(raw?.track_opens ?? raw?.trackOpens ?? false),
+    trackClicks: Boolean(raw?.track_clicks ?? raw?.trackClicks ?? false),
+    creatorUserId: raw?.creator_user_id ?? raw?.creatorUserId ?? "",
+    lastCreatedAt: raw?.last_created_at ?? raw?.lastCreatedAt ?? "",
+    createdAt: raw?.created_at ?? raw?.createdAt ?? "",
+    updatedAt: raw?.updated_at ?? raw?.updatedAt ?? "",
+  };
+}
+
+/**
  * Connect エラーレスポンス (`{"code": "...", "message": "..."}`) から
  * 日本語メッセージを取り出す。JSON でなければ生テキストを返す。
  */
