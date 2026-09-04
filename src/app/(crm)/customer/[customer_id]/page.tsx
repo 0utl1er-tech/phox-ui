@@ -21,6 +21,8 @@ interface Customer {
   address: string;
   memo: string;
   mail: string;
+  // Phase 29b: 顧客ごとの任意差し込み変数 ({{fields.<key>}})。
+  customFields?: Record<string, string>;
 }
 
 export default function CustomerDetailPage() {
@@ -84,6 +86,7 @@ export default function CustomerDetailPage() {
             address: data.customer?.address || '',
             memo: data.customer?.memo || '',
             mail: data.customer?.mail || '',
+            customFields: data.customer?.custom_fields || data.customer?.customFields || {},
           });
         }
       } catch (e) {
@@ -141,6 +144,7 @@ export default function CustomerDetailPage() {
         customerName={customer?.name ?? ""}
         customerCorporation={customer?.corporation ?? ""}
         customerPhone={customer?.phone ?? ""}
+        customerCustomFields={customer?.customFields}
         onSent={handleActivityChanged}
       />
     </div>

@@ -511,6 +511,12 @@ export default function AutoDraftSettings({ canEdit }: { canEdit: boolean }) {
                 <span className="block mt-1 text-xs text-gray-500">
                   {"{{customer_name}} / {{customer_corporation}} / {{customer_mail}} が使えます。配信停止リンクは自動で付きます。"}
                 </span>
+                {/* Phase 29b: この画面は Book 名パターンで対象を決めるため、
+                    受信者が確定しておらず fields のキーを列挙できない。
+                    使えること自体は案内する (プレビューでは空欄になる)。 */}
+                <span className="block mt-1 text-xs text-gray-500">
+                  {"CSV 取り込みで入った顧客ごとの差し込み変数 {{fields.<列名>}} も使えます (対象 Book が確定していないため、ここのプレビューでは空欄になります)。"}
+                </span>
               </label>
 
               {/* 本文プレビュー (キャンペーン作成ウィザードと同じ置換ロジック) */}

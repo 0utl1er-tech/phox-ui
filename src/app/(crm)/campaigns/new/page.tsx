@@ -28,6 +28,7 @@ import { useCampaignSelectionStore } from "@/store/campaign-selection";
 import {
   applyTemplate,
   todayJST,
+  referencedFieldKeys,
   TEMPLATE_PLACEHOLDERS,
   type TemplateVars,
 } from "@/lib/mail-template";
@@ -124,6 +125,12 @@ export default function NewCampaignPage() {
   const [trackOpens, setTrackOpens] = useState(true);
   const [trackClicks, setTrackClicks] = useState(true);
 
+  // Phase 29b: 受信者が実際に持っている差し込み変数 (custom_fields)。
+  // 「この本文で何が使えるか」を書き手に見せるため、受信者を数件サンプリング
+  // してキーの和集合とサンプル値を作る (全件舐める必要はない)。
+  const [fieldKeys, setFieldKeys] = useState<string[]>([]);
+  const [fieldSample, setFieldSample] = useState<Record<string, string>>({});
+
   // --- ③ 本文 ---
   const [name, setName] = useState("");
   const [subject, setSubject] = useState("");
@@ -206,6 +213,79 @@ export default function NewCampaignPage() {
     };
     void load();
   }, [accessToken]);
+
+  // Phase 29b: 受信者の差し込み変数 (custom_fields) をサンプリングする。
+  // 目的は「本文を書く人に、使えるキーと実際の値を見せる」こと。全受信者を
+  // 舐める必要はないので、Book は先頭ページ・個別選択は先頭数件だけ引く。
+  useEffect(() => {
+    if (!accessToken) return;
+    if (selectedBookIds.length === 0 && recipients.length === 0) {
+      setFieldKeys([]);
+      setFieldSample({});
+      return;
+    }
+    let cancelled = false;
+
+    const post = async (path: string, payload: unknown) => {
+      const r = await fetch(`${API_URL}/${path}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+      return r.ok ? await r.json() : null;
+    };
+
+    const load = async () => {
+      try {
+        const customers: any[] = [];
+        // Book 単位: 先頭 50 件で十分 (同じ CSV 由来なら列構成は揃っている)。
+        for (const bookId of selectedBookIds.slice(0, 3)) {
+          const data = await post("customer.v1.CustomerService/ListCustomer", {
+            bookId,
+            limit: 50,
+            offset: 0,
+          });
+          if (data?.customers) customers.push(...data.customers);
+        }
+        // 個別選択: 先頭 10 件だけ引く (件数が多いと選択リストが巨大になるため)。
+        if (selectedBookIds.length === 0) {
+          const results = await Promise.all(
+            recipients.slice(0, 10).map(([id]) =>
+              post("customer.v1.CustomerService/GetCustomer", { id }),
+            ),
+          );
+          for (const data of results) {
+            if (data?.customer) customers.push(data.customer);
+          }
+        }
+        if (cancelled) return;
+
+        const keys: string[] = [];
+        const sample: Record<string, string> = {};
+        for (const c of customers) {
+          const cf = c.custom_fields ?? c.customFields ?? {};
+          for (const [k, v] of Object.entries(cf)) {
+            if (!keys.includes(k)) keys.push(k);
+            // サンプル値は「最初に見つかった空でない値」。空しか無いキーも
+            // 一覧には出す (本文から参照できること自体が情報)。
+            if (!sample[k] && typeof v === "string" && v !== "") sample[k] = v;
+          }
+        }
+        keys.sort();
+        setFieldKeys(keys);
+        setFieldSample(sample);
+      } catch (e) {
+        console.error("fetch custom fields failed", e);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [accessToken, selectedBookIds, recipients]);
 
   // テンプレ選択用の Book 一覧
   useEffect(() => {
@@ -315,6 +395,14 @@ export default function NewCampaignPage() {
   // ライブプレビュー用のサンプル値 (先頭の受信者があればそれを使う)
   const previewVars = useMemo((): TemplateVars => {
     const first = recipients[0];
+    // Phase 29b: 差し込み変数は受信者の実データをサンプルに使う。本文が
+    // 参照しているのに実データが無いキーは、空文字で消えると「書いたのに
+    // 出ない」のか「差し込みが壊れている」のか区別が付かないため、
+    // 明示的なダミー値を置く (backend のテスト送信と同じ方針)。
+    const fields: Record<string, string> = { ...fieldSample };
+    for (const key of referencedFieldKeys(`${subject}\n${body}`)) {
+      if (!fields[key]) fields[key] = `(サンプル: ${key})`;
+    }
     return {
       customer_name: first?.[1].name || "山田 太郎",
       customer_corporation: "株式会社サンプル",
@@ -323,8 +411,9 @@ export default function NewCampaignPage() {
       sender_name: senderName,
       sender_mail: senderMail,
       today: todayJST(),
+      fields,
     };
-  }, [recipients, senderName, senderMail]);
+  }, [recipients, senderName, senderMail, fieldSample, subject, body]);
 
   const renderPreview = useCallback(
     (text: string) =>
@@ -958,6 +1047,47 @@ export default function NewCampaignPage() {
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Phase 29b: 顧客ごとの差し込み変数 {{fields.*}} */}
+              <div className="space-y-1" data-testid="fields-placeholders">
+                <p className="text-xs font-medium text-gray-500">
+                  差し込み変数 (顧客ごとに違う値)
+                </p>
+                {fieldKeys.length > 0 ? (
+                  <>
+                    <div className="flex flex-wrap gap-1.5">
+                      {fieldKeys.map((key) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => insertPlaceholder(`fields.${key}`)}
+                          title={
+                            fieldSample[key]
+                              ? `例: ${fieldSample[key].slice(0, 120)}`
+                              : "この受信者リストでは値が空です"
+                          }
+                          className="px-2 py-1 text-xs font-mono bg-violet-50 hover:bg-violet-100 border border-violet-200 rounded-md text-violet-700 transition-colors"
+                        >
+                          {`{{fields.${key}}}`}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      受信者の CSV 列から取り込まれた変数です (先頭数件をサンプリング)。
+                      値が無い顧客には空文字が入ります。
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-500">
+                    この受信者リストには差し込み変数がありません。CSV
+                    取り込みで <span className="font-mono">name / mail / phone</span> 等の
+                    標準列以外の列 (例{" "}
+                    <span className="font-mono">meo_score</span>) を入れておくと、
+                    <span className="font-mono">{"{{fields.meo_score}}"}</span>{" "}
+                    として 1 通ごとに違う内容を差し込めます。
+                  </p>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

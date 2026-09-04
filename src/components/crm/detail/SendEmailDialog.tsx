@@ -37,6 +37,12 @@ interface SendEmailDialogProps {
   customerName?: string;
   customerCorporation?: string;
   customerPhone?: string;
+  /**
+   * Phase 29b: 顧客ごとの任意差し込み変数。テンプレに {{fields.<key>}} が
+   * 入っていた場合にここから埋める。渡さないと空文字に置換されるため、
+   * キャンペーン用テンプレを 1:1 メールに流用したときに値が消える。
+   */
+  customerCustomFields?: Record<string, string>;
   onSent?: () => void;
 }
 
@@ -67,6 +73,7 @@ export function SendEmailDialog({
   customerName,
   customerCorporation,
   customerPhone,
+  customerCustomFields,
   onSent,
 }: SendEmailDialogProps) {
   const accessToken = useAuthStore((s) => s.user?.accessToken);
@@ -181,6 +188,7 @@ export function SendEmailDialog({
     sender_name: senderName,
     sender_mail: senderMail,
     today: todayJST(),
+    fields: customerCustomFields ?? {},
   });
 
   const handleApplyTemplate = () => {
