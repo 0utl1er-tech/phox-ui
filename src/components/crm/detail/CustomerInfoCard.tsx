@@ -13,6 +13,7 @@ import {
   FiLoader,
   FiMap,
   FiExternalLink,
+  FiTag,
 } from "react-icons/fi";
 import { FaFax } from "react-icons/fa";
 import { updateCustomer } from "@/app/(crm)/book/[book_id]/customer/[customer_id]/actions";
@@ -28,6 +29,11 @@ interface Customer {
   address: string;
   memo: string;
   mail: string;
+  /**
+   * Phase 29b: 顧客ごとの任意差し込み変数。CSV 取り込みの未知列などが入り、
+   * キャンペーン本文で {{fields.<key>}} として差し込まれる。
+   */
+  customFields?: Record<string, string>;
 }
 
 interface CustomerInfoCardProps {
@@ -312,6 +318,44 @@ function AddressMapPreview({ customerId, address }: { customerId: string; addres
   );
 }
 
+/* ---------- 差し込み変数 (custom_fields) ---------- */
+
+/**
+ * 顧客ごとの任意差し込み変数の一覧。空なら何も描かない。
+ * 値は診断結果の箇条書きなど複数行になり得るので whitespace-pre-wrap で出す
+ * (メール本文でも改行はそのまま <br> になるため、見え方を揃える)。
+ */
+function CustomFieldsSection({ fields }: { fields?: Record<string, string> }) {
+  const entries = Object.entries(fields ?? {}).sort(([a], [b]) => a.localeCompare(b));
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="pt-3 mt-3 border-t border-gray-100" data-testid="custom-fields">
+      <label className="text-xs font-medium text-gray-400 flex items-center gap-1.5">
+        <FiTag className="w-3.5 h-3.5 text-violet-500" />
+        差し込み変数
+        <span className="text-[10px] font-normal text-gray-400">
+          ({entries.length} 件・キャンペーン本文で使えます)
+        </span>
+      </label>
+      <dl className="mt-1.5 space-y-1.5">
+        {entries.map(([key, value]) => (
+          <div
+            key={key}
+            className="rounded-md border border-gray-200 bg-gray-50/60 px-2.5 py-1.5"
+            data-testid={`custom-field-${key}`}
+          >
+            <dt className="font-mono text-[11px] text-violet-700">{`{{fields.${key}}}`}</dt>
+            <dd className="mt-0.5 text-xs text-gray-700 whitespace-pre-wrap break-words">
+              {value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
 export default function CustomerInfoCard({ customer, onCustomerUpdate }: CustomerInfoCardProps) {
   const user = useAuthStore((state) => state.user);
   const [isPending, startTransition] = useTransition();
@@ -516,6 +560,11 @@ export default function CustomerInfoCard({ customer, onCustomerUpdate }: Custome
             onBlur={handleBlur}
           />
         </div>
+
+        {/* Phase 29b: 差し込み変数 (custom_fields)。読み取り専用 —
+            値の生成は CSV 取り込みや外部パイプライン (MEO 診断など) の
+            責務で、ここで手編集させると再取り込みで上書きされ混乱する。 */}
+        <CustomFieldsSection fields={customer?.customFields} />
       </CardContent>
     </Card>
   );

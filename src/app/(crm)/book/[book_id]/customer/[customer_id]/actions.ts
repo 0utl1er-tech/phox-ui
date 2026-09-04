@@ -24,6 +24,10 @@ export interface UpdateCustomerResult {
     address: string;
     memo: string;
     mail: string;
+    // Phase 29b: 差し込み変数。この action では更新しないが、更新後の
+    // customer をそのまま state に載せる呼び出し元があるため、返り値から
+    // 落とすと画面上の一覧が消えてしまう。
+    customFields: Record<string, string>;
   };
 }
 
@@ -70,6 +74,8 @@ export async function updateCustomer(
         address: updatedCustomer?.address || "",
         memo: updatedCustomer?.memo || "",
         mail: updatedCustomer?.mail || "",
+        customFields:
+          updatedCustomer?.custom_fields || updatedCustomer?.customFields || {},
       },
     };
   } catch (error) {
