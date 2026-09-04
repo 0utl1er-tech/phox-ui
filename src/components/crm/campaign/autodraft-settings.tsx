@@ -607,7 +607,7 @@ export default function AutoDraftSettings({ canEdit }: { canEdit: boolean }) {
                     利用できるメールボックスがありません (editor 以上の権限が必要)。
                   </p>
                 ) : (
-                  <div className="space-y-1">
+                  <div className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2">
                     {mailboxes.map((m) => {
                       const checked = form.mailboxIds.includes(m.id);
                       return (
