@@ -144,6 +144,7 @@ export default function CustomerDetailPage() {
         customerName={customer?.name ?? ""}
         customerCorporation={customer?.corporation ?? ""}
         customerPhone={customer?.phone ?? ""}
+        customerCustomFields={customer?.customFields}
         onSent={handleActivityChanged}
       />
     </div>
