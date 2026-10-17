@@ -90,7 +90,7 @@ function emptyForm(): AutoDraftForm {
     sendStartHour: 9,
     sendEndHour: 18,
     sendDays: 31,
-    dailyCapPerMailbox: 100,
+    dailyCapPerMailbox: 300,
     minIntervalSec: 90,
     warmupEnabled: true,
     bouncePauseThreshold: 5,

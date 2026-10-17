@@ -117,7 +117,7 @@ export default function NewCampaignPage() {
   const [sendStartHour, setSendStartHour] = useState(9);
   const [sendEndHour, setSendEndHour] = useState(18);
   const [sendDays, setSendDays] = useState(31); // 平日
-  const [dailyCap, setDailyCap] = useState(100);
+  const [dailyCap, setDailyCap] = useState(300);
   const [minIntervalSec, setMinIntervalSec] = useState(90);
   const [warmupEnabled, setWarmupEnabled] = useState(true);
   // Phase 27f: バウンス率による自動停止のしきい値 (%)。0 で無効。
