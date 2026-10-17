@@ -50,6 +50,11 @@ export interface CampaignStats {
   lastSentAt?: string;
   /** Phase 27e: フォローアップ待ち (1 通以上送信済みで次ステップの時期待ち)。 */
   waitingFollowup: number;
+  /**
+   * Phase 30: 送信済み受信者の current_step の最大値 (0 = まだ誰にも送っていない)。
+   * 1 通目の件名ロック・ステップ削除ガードの判定に使う (backend と同じ値)。
+   */
+  maxSentStep: number;
 }
 
 export type CampaignStatus =
@@ -308,6 +313,7 @@ export function normalizeStats(raw: any): CampaignStats {
     unsubscribed: Number(raw?.unsubscribed ?? 0),
     lastSentAt: raw?.last_sent_at ?? raw?.lastSentAt ?? undefined,
     waitingFollowup: Number(raw?.waiting_followup ?? raw?.waitingFollowup ?? 0),
+    maxSentStep: Number(raw?.max_sent_step ?? raw?.maxSentStep ?? 0),
   };
 }
 

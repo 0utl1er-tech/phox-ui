@@ -8,6 +8,7 @@
 // Phase 27d: Instantly 風ダッシュボード — 日次折れ線チャート
 // (GetCampaignTimeseries)・稼働インジケータ (送信窓判定 + lastSentAt)・
 // 完了予定カード (estimatedCompletionAt)。running 中は 15 秒ポーリング。
+// Phase 30: 配信内容セクション (ステップごとの文面の閲覧・編集)。
 
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -38,6 +39,7 @@ import {
 } from "@/components/crm/campaign/StatusBadge";
 import { RecipientEventsDialog } from "@/components/crm/campaign/RecipientEventsDialog";
 import { CampaignChart } from "@/components/crm/campaign/CampaignChart";
+import { CampaignContentSection } from "@/components/crm/campaign/CampaignContentSection";
 import {
   type Campaign,
   type CampaignDailyStat,
@@ -265,6 +267,8 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
   const { campaign_id: campaignId } = use(params);
   const router = useRouter();
   const accessToken = useAuthStore((s) => s.user?.accessToken);
+  const senderName = useAuthStore((s) => s.user?.name ?? "");
+  const senderMail = useAuthStore((s) => s.user?.email ?? "");
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [timeseries, setTimeseries] = useState<CampaignDailyStat[]>([]);
@@ -711,6 +715,15 @@ export default function CampaignDetailPage({ params }: CampaignDetailPageProps) 
           {campaign.startedAt && <span>開始: {formatTimestamp(campaign.startedAt)}</span>}
           {campaign.completedAt && <span>完了: {formatTimestamp(campaign.completedAt)}</span>}
         </div>
+
+        {/* Phase 30: 配信内容 (ステップごとの文面の閲覧・編集) */}
+        <CampaignContentSection
+          campaign={campaign}
+          callApi={callApi}
+          onCampaignChange={setCampaign}
+          senderName={senderName}
+          senderMail={senderMail}
+        />
 
         {/* テスト送信 */}
         {canTestSend && (
